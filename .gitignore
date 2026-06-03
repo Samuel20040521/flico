@@ -1,3 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.uv-cache/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
 # LaTeX build artefacts
 *.aux
 *.log
