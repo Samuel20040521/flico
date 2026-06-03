@@ -1,0 +1,200 @@
+% =====================================================================
+%  2026-05-19 — host 端從 Python (matplotlib → PyQtGraph) 改寫成 Rust
+% =====================================================================
+
+\subsection*{今日目標}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 解掉 host 端\textbf{即時繪圖卡頓}的問題:量測時間一拉長(累積樣本超過 \(\sim 3 \times 10^4\) 點)
+        就掉到 \(\sim 0.5\) fps,根本看不到即時波形。
+  \item 把 \texttt{host/} 從 Python 換掉。這幾天連續迭代過兩版
+        (\texttt{matplotlib} \(\to\) \texttt{PyQtGraph})都沒能徹底解決效能,
+        今天決定整個重寫成 \textbf{Rust}(\texttt{eframe} \(+\) \texttt{egui} \(+\) \texttt{egui\_plot})。
+  \item 順手把 Rust 版做成\textbf{雙目標 build}:原生(macOS/Windows)+ WASM
+        (\texttt{cargo run --target wasm32-unknown-unknown}),
+        讓之後分享給同學看波形時直接開瀏覽器、不用 install。
+\end{itemize}
+
+\subsection*{Python 版的兩階段失敗}
+
+\paragraph{階段一(5/8 \(\sim\) 5/12 用過):\texttt{matplotlib} + \texttt{plt.ion()} 互動模式。}
+寫起來最快:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{pyserial} 開 \texttt{/dev/cu.usbmodemXXX} \(\to\) 阻塞讀一行 \(\to\)
+        \texttt{ax.lines[0].set\_data(...)} \(\to\) \texttt{plt.pause(0.01)}。
+  \item \textbf{問題}:畫面\textbf{會閃}。每次 \texttt{plt.pause()} 內部 \texttt{draw\_idle()}
+        會把整個 figure backend 重畫一次,在 macOS retina \(+\) Apple Silicon 上
+        \(\sim \SI{60}{\hertz}\) 同步翻轉,畫到一半的 frame 會被推到螢幕 \(\Rightarrow\) 整條波形
+        看起來像 PWM 一樣閃黑。把 \texttt{plt.pause} 拉到 \texttt{0.05} 改善了一點,
+        但代價是 frame rate 直接掉到 \(\SI{20}{fps}\)。
+  \item \textbf{根本原因}:matplotlib 的設計是「\textbf{出版品質靜態圖}」,不是「即時 oscilloscope」。
+        backend(macOS 上 默認是 \texttt{macosx})每次 redraw 都重新計算 ticks、layout、字體
+        renderer,在我們這種要每 \(\SI{30}{\milli\second}\) 推一次新樣本的場景,純粹是浪費 CPU。
+\end{itemize}
+
+\paragraph{階段二(5/13 \(\sim\) 5/18 用過):\texttt{PyQtGraph}。}
+網路 Maker 圈共識:做 oscilloscope 就用 PyQtGraph。試了:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 用 \texttt{PlotWidget} + \texttt{setData()},裡面是 Qt 的 \texttt{QGraphicsScene},
+        backed by OpenGL(設 \texttt{pg.setConfigOption("useOpenGL", True)})。
+  \item \textbf{閃的問題秒解}:Qt 用 double-buffering + V-sync,完全沒有撕裂。
+        在 \(< 10^4\) 樣本的視窗下,流暢到 \(\sim \SI{60}{fps}\)。
+  \item \textbf{但長量測一拖,效能就跳水}:flicker meter 真實工作場景是「按下錄製
+        \(\to\) 對著螢幕量個 30 秒 \(\to\) 看 FFT 跟波形」,
+        \(\SI{10}{\kilo\hertz}\) 採樣 \(\times\) 30 s \(=\) \(3 \times 10^5\) 樣本。
+        實測在 \(3 \times 10^4\) 樣本就掉到 \(\sim 0.5\) fps —— 滑鼠拖視窗都跟不上。
+\end{itemize}
+
+\paragraph{PyQtGraph 卡在哪?} 花了一晚 profiling:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{NumPy \(\leftrightarrow\) Qt 拷貝}:\texttt{setData(x, y)} 每次都把整條 numpy array
+        \texttt{memcpy} 進 \texttt{QPainterPath},\(3 \times 10^5\) 點 \(\times\) 8 bytes \(\times\) 2 軸 \(\approx\) 5 MB,
+        每 frame 要傳 5 MB 到 GPU,純頻寬就吃掉 \(\sim 16\) ms。
+  \item \textbf{Python GIL 跟 serial reader thread 互搶}:
+        即使把序列讀取丟到 thread,GIL 一拿就會卡 GUI;PyQtGraph 的 \texttt{useOpenGL=True}
+        其實只負責 \emph{rasterization},\emph{tessellation}(把 line 拆成三角形)還是在 Python 端跑。
+  \item \textbf{動態 LOD 沒有現成方案}:量測 30 秒、視窗只顯示最後 1 秒,
+        應該只 render 那 1 秒的點 \(\times\) downsample 到 \(< 2000\) 點(視窗 pixel 數),
+        但 PyQtGraph 的 downsample 路徑(\texttt{setDownsampling()})CPU bound 嚴重,
+        \(\geq 10^5\) 點時 downsample 本身就吃 \(\sim 100\) ms,讓 FPS 上不去。
+\end{itemize}
+
+結論:\textbf{Python 不是不行,而是要解到 30+ fps 的工作量等於從零寫一個 plotting framework}。
+那不如直接用一個 native immediate-mode GUI 的語言。
+
+\subsection*{選 Rust + eframe/egui 的理由}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Immediate-mode GUI}:\texttt{egui} 每 frame 重新 emit 整個 UI tree,
+        但內部是 GPU-friendly 的 vertex/index buffer 直推 wgpu/OpenGL,沒有 retained scene graph
+        要維護。對「\textbf{波形每 frame 都重畫}」的場景剛好對味。
+  \item \textbf{Zero-copy buffer}:Rust 的 \texttt{\&[f32]} 直接餵 \texttt{egui\_plot::Line::new()},
+        沒有 PyQt 那種 numpy/Qt 雙層拷貝。
+  \item \textbf{Multithreading 沒有 GIL}:序列讀取丟到 \texttt{std::thread},
+        透過 \texttt{crossbeam-channel} 把樣本批次傳給 GUI thread,
+        兩邊完全平行跑,GUI render 跟序列吞吐互不阻塞。
+  \item \textbf{FFT 用 \texttt{realfft} + \texttt{rustfft}}:跟 Python 的 \texttt{scipy.fft} 效能等級類似,
+        但可以丟到專用的 FFT worker thread,GUI 不會等。
+  \item \textbf{WASM target 免費送}:\texttt{eframe} 內建 wasm32 後端,
+        Rust crate 加一個 \texttt{index.html} 就能 \texttt{cargo run --target wasm32}
+        產出靜態網頁。之後給組員 demo 不用裝環境。
+\end{itemize}
+
+下午動手,晚上跑完一輪。
+
+\subsection*{Rust 版架構:\texttt{host/} (crate name \texttt{rust\_flico})}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Cargo.toml 主要 deps}:\texttt{eframe = "0.29"}, \texttt{egui = "0.29"},
+        \texttt{egui\_plot = "0.29"}, \texttt{realfft = "3.4"}, \texttt{rustfft = "6.2"},
+        \texttt{serialport = "4.6"}, \texttt{crossbeam-channel = "0.5"}, \texttt{clap = "4.5"}。
+  \item \textbf{Thread 拓樸} (3 條):
+        \begin{enumerate}[leftmargin=2em,itemsep=0pt]
+          \item \textbf{Source thread}(\texttt{spawn\_pico\_source} \(+\) \texttt{spawn\_synth\_source}):
+                從 Pico USB-CDC 阻塞讀 3-byte binary frame
+                (或合成測試訊號),解碼後 push 到 \texttt{SharedSamples}(\texttt{Arc<Mutex<Vec<f32>>>})。
+          \item \textbf{FFT worker thread}(\texttt{spawn\_fft\_worker}):
+                收 \texttt{FftJob} 命令(視窗起訖樣本 index),呼叫 \texttt{FftComputer::compute()}
+                把結果 \texttt{FftResult} 推回 GUI。GUI 只在縮放 zoom 改變時才送新 job,
+                不會每 frame 重算。
+          \item \textbf{Main / GUI thread}(\texttt{eframe::App::update}):
+                每 frame 從 \texttt{SharedSamples} 取 \texttt{\&[f32]} 直接畫,
+                透過 \texttt{egui\_plot::Line} 推進 \texttt{egui::ui}。
+        \end{enumerate}
+  \item \textbf{LOD}:當前可見視窗 \([t_\text{lo}, t_\text{hi}]\) 透過 \texttt{slice\_indices()}
+        算出對應的 sample range,只把這段 slice 餵給 \texttt{Line::new()}。
+        Y 軸自動 fit 用 \texttt{data\_y\_range\_in\_x()} 算 visible window 的 min/max,
+        \(\Rightarrow\) 縮 zoom 不會被 30 秒 outliers 拉到看不到細節。
+  \item \textbf{Auto-detect Pico port}:\texttt{auto\_detect\_pico\_port\_unix()} 掃
+        \texttt{/dev/cu.usbmodem*},Windows 端 default 到 \texttt{COM3}(已知 Pico 第一次插的位置)。
+  \item \textbf{CSV export}:\texttt{export\_csv()} 把 ring buffer snapshot 一次寫出,
+        檔名 \texttt{flicker\_<unix\_timestamp>.csv}(避免覆蓋)。
+  \item \textbf{Performance HUD}:\texttt{PerfRing}(ring buffer of frame times)
+        即時算 fps,顯示在右上角小視窗,方便調 zoom 等級時即時看 cost。
+\end{itemize}
+
+整支只有一個 \texttt{src/main.rs},約 \(1\,270\) 行,包含 native \(+\) WASM 兩種 \texttt{fn main()}
+(\texttt{\#[cfg(not(target\_arch = "wasm32"))]} gate)。
+
+\subsection*{效能對照}
+
+\begin{table}[H]
+  \centering
+  \caption{host 端三版 (matplotlib / PyQtGraph / Rust egui) 即時繪圖 fps 比較。
+           測試條件:採樣率 \(\SI{10}{\kilo\hertz}\),BPW34 對著螢幕跑 PWM 閃爍訊號,
+           macOS 15 \(\times\) M1 Air \(\times\) 13" 內建 retina。}
+  \label{tab:0519-perf}
+  \begin{tabular}{lrrr}
+    \toprule
+    累積樣本數 & matplotlib & PyQtGraph & \textbf{Rust (egui\_plot)} \\
+    \midrule
+    \(10^3\)         & 20  fps & 60 fps & \textbf{60 fps (V-sync 上限)} \\
+    \(10^4\)         & 8  fps  & 60 fps & \textbf{60 fps} \\
+    \(3 \times 10^4\)& 3  fps  & 0.5 fps & \textbf{60 fps} \\
+    \(10^5\)         & 1  fps  & 卡死(無法操作)& \textbf{40 fps} \\
+    \(3 \times 10^5\)& 卡死    & 卡死             & \textbf{30 fps} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\(\sim 60 \times\) 跨度。\textbf{matplotlib 從一開始就是錯的工具,PyQtGraph 在 \(3 \times 10^4\) 樣本
+打牆是 architectural ceiling,Rust 版到 \(3 \times 10^5\) 樣本還守在 30 fps 以上},
+而且 macOS 風扇連啟動都沒啟動。
+
+\subsection*{Rust 版多了哪些 Python 版做不到的事}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{WASM build}:\texttt{cargo build --release --target wasm32-unknown-unknown},
+        產出 \(\sim 8\) MB 的 \texttt{.wasm}(LTO + \texttt{codegen-units = 1});
+        \texttt{index.html} 用 \texttt{<canvas id="the\_canvas\_id">} 接 \texttt{eframe::WebRunner}。
+        部署到 GitHub Pages 之後,任何人開瀏覽器就能跑 synth source 看 GUI(USB-CDC 沒辦法,
+        但 WebSerial 可以之後加)。
+  \item \textbf{Synth source}:\texttt{synth\_sample()} 內建 sinusoid \(+\) noise 合成,
+        \texttt{--synth} flag 一打就跑,demo 給人看不用扛實體 Pico。
+  \item \textbf{Single binary 直接 ship}:macOS 跑 \texttt{cargo build --release},
+        丟一支 \(\sim 12\) MB 的執行檔給隊友。
+        \texttt{.github/workflows/release-rust\_flico.yml} 設好 cross-compile,
+        push tag 自動產 macOS universal binary \(+\) Windows x86\_64 binary。
+        (這支 release CI 是 release/v0.1 那天做的,5/19 還沒寫。)
+\end{itemize}
+
+\subsection*{Python 版的去向}
+
+砍掉。\textbf{不留兩個 host 版本}:雙版本維護的 cost 太高、序列協定改個一 byte 就要兩邊同步,
+不值得。Python 版的歷史會留在 \texttt{host/read\_data.py} 之前的 git 紀錄裡
+(5/8 那條 \texttt{while True: print(ser.readline())} \(\to\) matplotlib \(\to\) PyQtGraph)。
+往後 \texttt{host/} 只代表 Rust crate。
+
+\subsection*{今日心得}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{選工具的時候要看「真正的工作量」,不是「最常見的入門範例」}。
+        matplotlib 的範例都是\textbf{靜態出版圖},PyQtGraph 的範例都是\textbf{秒級短時間量測},
+        我們的工作場景是「\textbf{多秒到多分鐘連續累積 \(+\) 即時 zoom}」——
+        現成的範例剛好都不打到我們的痛點,要做出來都是強推。
+  \item \textbf{效能瓶頸經常不在「算」,而是在「畫」}。從一開始我以為 Python 慢在 FFT,
+        其實 FFT 在 \texttt{scipy.fft.rfft} 跑 \(10^5\) 點才 \(\sim 5\) ms;真正吃時間的是
+        把那 \(10^5\) 點推到 Qt scene graph 那層的拷貝 + tessellation。
+        換 Rust 不是因為 \texttt{rustfft} 比 scipy 快,而是因為 immediate-mode GUI 沒有 scene graph,
+        \texttt{\&[f32]} 直推 GPU vertex buffer。
+  \item \textbf{Immediate-mode GUI 在「資料每 frame 都會變」的場景下大勝 retained-mode}。
+        Qt 的設計理念是「UI tree 大致不變、偶爾推 update」,所以做 dock 視窗、
+        屬性面板、編輯器無敵;但即時 oscilloscope 是反過來的 ——
+        資料每 frame 都新的、UI 結構基本不變,reverse-pattern 下 egui 直接贏。
+  \item \textbf{下一步}:
+        \begin{enumerate}[leftmargin=2em,itemsep=0pt]
+          \item 把 \texttt{egui\_plot} 的 zoom 和 FFT 視窗\textbf{連動}:
+                改 time-domain 視窗 \(\to\) 自動送新 \texttt{FftJob} \(\to\) FFT 視窗顯示
+                這個視窗區間內的頻譜。(已實作雛形,GUI 還在打磨。)
+          \item 寫 \texttt{convert.py} 把舊 PyQtGraph 時代留下的 \texttt{flicker\_*.csv}
+                轉成 Rust 版能讀的 binary 格式,當「歷史錄檔回放」功能進去。
+          \item 等 5/18 設計的 PD\_detector\_pro 真的有實體 v2 PCB 之後,
+                把序列協定升級到 16-bit binary frame(現在還是 12-bit Pico ADC),
+                Rust 版只要改解碼端 \(\sim 20\) 行就好。
+          \item 設 CI workflow 自動 cross-compile macOS universal \(+\) Windows binary,
+                push tag 就出 release。\textbf{隔天(5/20)就做掉}。
+        \end{enumerate}
+\end{itemize}
