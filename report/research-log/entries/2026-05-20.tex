@@ -1,0 +1,243 @@
+% =====================================================================
+%  2026-05-20 ~ 2026-05-25 — 最終版 PCB (SOC_Final) 設計、模擬、送 JLCPCB
+% =====================================================================
+
+\subsection*{今日(20)目標 + 接下來 5 天的總綱}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 開新專案 \texttt{SOC\_Final}(歸檔在 \texttt{hardware/final-version/})
+        畫\textbf{最終版 PCB},目標 5/25 前送出 JLCPCB PCBA。
+  \item 流程上回到\textbf{KiCad 原生 GUI workflow},但把 \texttt{first-version} (5/8)
+        跟 \texttt{second-version} (5/18) 兩條路線學到的教訓全部塞進去:
+        \begin{itemize}[leftmargin=2em,itemsep=0pt]
+          \item \texttt{first-version}:GUI 沒錯,錯在沒想清楚規格就開拉
+          \item \texttt{second-version}:SKiDL 是好工具,但對於\emph{已收斂}的設計,
+                程式化反而比 GUI 拖累 —— 因為 schematic 不會再改太多
+        \end{itemize}
+  \item \textbf{時程}:5/20 schematic、5/21\,\(\sim\)\,5/23 layout + 模擬交叉驗證、
+        5/24 收尾 + 對 JLCPCB Basic Parts 替換、5/25 晚間 21:23 送出 \texttt{SOC\_Final\_JLCPCB.zip}。
+        本 entry 一次寫完這 6 天的整段弧線。
+  \item 同期(5/20\,\(\sim\)\,5/25)還在迭代 \texttt{host/} Rust GUI(5/19 起手)的 UI/UX,
+        每天的 PCB 設計都搭配\textbf{真機量測 + host 端確認波形對得起來}。
+\end{itemize}
+
+\subsection*{Day 1 (5/20) — schematic 從零起手 + 第一次 ERC}
+
+15:53:31 第一次跑 ERC(\texttt{ERC.rpt} 時間戳留檔)。第一輪報出 \(\sim 20\) 條錯,
+都是「該收的線沒收乾淨」典型:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{[power\_pin\_not\_driven]}:U2(LDO)的 \texttt{EN} 腳沒被驅動,
+        ERC 不知道這條 net 哪裡來電 \(\Rightarrow\) 加 PWR\_FLAG。
+  \item \texttt{[pin\_not\_connected]}:Pico (A1) 的 Pin 36(3V3 output)沒接東西 ——
+        我這版打算\textbf{不用 Pico 內建 3V3},改用外部 LP5907 LDO,所以 Pin 36 是真的沒用,
+        但 ERC 還是會報。\(\Rightarrow\) 補一個 \texttt{NoConnect} flag。
+  \item \texttt{[pin\_to\_pin] Power output \(\leftrightarrow\) Power output}:
+        Pico 的 GND (Pin 3) 跟 AGND (Pin 33) 被我故意接在一起
+        (整片板子單一 GND, star-grounding 在這裡簡化掉);ERC 把兩個 output power
+        pin 連在一起當作衝突報出來 —— 這是錯誤警報,但要在
+        Schematic Setup 中改 ERC severity 才會閉嘴。
+  \item 一堆 \texttt{[unconnected\_wire\_endpoint]} warning:拉線拉一半沒接到 pin。
+        \emph{典型新手在 GUI 拖線忘記端點對齊的 artifact} \(\Rightarrow\) 一個一個 \texttt{E} 鍵
+        打開接點。
+\end{itemize}
+
+順手在 \texttt{tools/silkscreen\_normalize.py} 寫了一支腳本,
+把所有元件的 Reference Designator(R1 / C12 / U3 那種)\textbf{字體大小、粗細、位置}
+統一(0.6 mm × 0.6 mm × 0.12 mm thickness、置中於 footprint)。原本是手動點開每顆元件改,
+拖了 \(\sim 1\) 小時還沒 60 \% \(\Rightarrow\) 改用 \texttt{pcbnew} Python API 一秒鐘解決。
+
+\paragraph{當天的真機量測。}
+13:26 跟 13:28 各錄了一段 CSV(\texttt{flicker\_1779254801.csv} \(+\)
+\texttt{flicker\_1779254893.csv},各 \(\sim 2.1\) MB,\(\SI{10}{\kilo\hertz}\) 採樣 \(\sim 20\) 秒)
+餵到 host 端看。\textbf{目的不是量測螢幕,而是把這條真實的 BPW34 \(+\) 麵包板雜訊存下來,
+等下面 5/22 那一節要當 PWL 噪音源餵 KiCad simulator}。
+
+\subsection*{Day 2 (5/21) — schematic 完成 + footprint 全綁 + LCSC 編號}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Schematic 主架構} (跟 \texttt{second-version} 對齊但有幾處務實妥協):
+        \begin{itemize}[leftmargin=2em,itemsep=0pt]
+          \item Op-amp:\textbf{MCP6004}(quad, SOIC-14) — 維持 5/6 麵包板時就在用的型號。
+                \emph{放棄 OPA328} 的理由是:JLCPCB Basic Parts 裡 MCP6004 是常備庫存,
+                換 OPA328 要付 \(\sim \$3\) 換料費,而我們這版的目標增益最高 1\,M\(\Omega\),
+                MCP6004 的 \(I_B = 1\,\mathrm{pA}\) 就夠了,沒必要為了 0.2 pA 的 OPA328
+                多花錢 + 多等貨。
+          \item Mux:\textbf{74HC4051}(8-ch,DIP/SOIC) — 同樣維持麵包板版本。
+                \emph{放棄 TMUX1208} 因為這版的 8 檔(實際只用 4 檔)還不需要 \(R_\text{on} = 5\Omega\)
+                這種精度。等真的有 v4 想拼極限再升級。
+          \item Photodiode:\textbf{BPW34} 插孔式 + 雙芯線拉出去
+                (沿用 5/12 麵包板焊接版本的物理配置)。SFH 2440 跟它的導光柱問題留給
+                未來的「研究板」處理。
+          \item ADC:\textbf{回到 Pico 內建},不用外部 ADS8326。\emph{放棄外接}
+                因為 SPI 線路 + 16-bit SAR + 外部 \(V_\text{REF}\) 把板子複雜度推高 30 \%,
+                而 host 端 Rust GUI 的 12-bit Pico ADC 顯示效果已經夠好。
+          \item 電源:LP5907-3.3V LDO + ferrite bead 過濾 USB 雜訊。\emph{砍掉鋰電池路徑}
+                (MCP73831 + SS14 OR-ing 全部不畫) —— 純 USB 供電,板子瘦下來。
+          \item OLED 接腳留 4-pin header(I2C0, GP4/GP5),不焊上去,留給組裝時插接。
+        \end{itemize}
+  \item \textbf{Footprint 綁定}:Tools \(\to\) Footprint Assignment Tool 一次配齊,
+        0805 走 \texttt{Resistor\_SMD:R\_0805\_2012Metric}、
+        Pico 走 \texttt{Module:RPi\_Pico\_SMD}(郵票孔貼裝)。
+  \item \textbf{LCSC 編號全綁}:用 \texttt{Tools \(\to\) Edit Symbol Fields} 表格化編輯,
+        56k 0805 \(\to\) \texttt{C17414}、SS14 \(\to\)(這版沒用)、MCP6004 \(\to\) \texttt{C7766}、
+        74HC4051 \(\to\) \texttt{C5708} …… 每顆元件 BOM 欄位都齊。
+        絕大多數是\textbf{Basic Parts},Extended Parts 換料費應該壓在 \(\$3\) 以內。
+\end{itemize}
+
+\subsection*{Day 3 (5/22) — KiCad spice simulation 跑 TIA 增益 + 雜訊模擬}
+
+中間插一個「驗證」的整天。把 5/20 錄的 \(\SI{10}{\kilo\hertz}\) 麵包板 CSV
+透過 \texttt{host/convert.py} 轉成 KiCad 認得的 PWL(Piecewise Linear)格式:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{流程}:CSV \(\to\) \texttt{pandas.read\_csv} \(\to\) 時間欄位歸零 + 轉秒 \(\to\)
+        電壓欄位去 DC 平均 + \(\times 1000\) 還原成 V 單位 \(\to\) 寫成
+        「time voltage」兩欄空白分隔、保留小數六位 \(\to\) \texttt{kicad\_noise\_pwl.txt}。
+        \(\sim 20\) 行 \texttt{pandas} 搞定。
+  \item \textbf{KiCad simulation workbook} \texttt{TIA\_Gain\_100M.wbk}:
+        spice 模型把 BPW34 用 ideal current source 取代,加一個 PWL voltage source
+        把 \texttt{kicad\_noise\_pwl.txt} 注入到 BPW34 陰極點(模擬實測雜訊),
+        op-amp 用 MCP6004 macro model,各檔 \(R_f\) sweep。
+        \textbf{看的是}:在最高增益(\(R_f = 100\,\mathrm{M}\Omega\),這個檔位是「未來想加但這版沒接」的測試用)
+        下,實測雜訊會被放大到多大、會不會打到軌、會不會引發震盪。
+  \item \textbf{結果}:在 1\,M\(\Omega\) 檔位,實測噪音 \(\sim 100\,\mu V_\text{rms}\) (RC filter 之後)
+        被放大到 \(\sim \SI{100}{\milli\volt}_\text{rms}\) on \(V_\text{OUT}\),完全在線性區。
+        但 100\,M\(\Omega\) 那個假想檔位會直接撞 rail \(\Rightarrow\) 確認\textbf{這版最高就是
+        1\,M\(\Omega\)},不要貪心加 10\,M。
+\end{itemize}
+
+\textbf{這個「實測 \(\to\) PWL \(\to\) Spice」流程是這幾天最得意的方法論}:
+傳統 simulator 都是用「白噪音 / 一個固定 RMS 值」當雜訊輸入,但 BPW34 的真實噪音
+有非常複雜的 1/f shape \(+\) 60\,Hz 市電串擾,白噪音 sim 出來的結果跟現實對不太上。
+把實測的 CSV 直接餵 simulator,等於是\textbf{用「板子已經看見的噪音」反推「板子放大後會變什麼樣」},
+驗證度高。
+
+\subsection*{Day 4 (5/23) — PCB layout}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{尺寸}:\(50 \times 25\) mm,跟 Pico 平面同寬,方便堆疊到 Pico 上(郵票孔焊死)。
+        厚度 1.6 mm 標準。雙層板。
+  \item \textbf{布局}(沿用 \texttt{second-version} 的 \emph{flipped island} 教訓):
+        \begin{itemize}[leftmargin=2em,itemsep=0pt]
+          \item 板子下半 = 類比安靜區:BPW34 接腳排座、MCP6004 TIA、74HC4051 mux、
+                4 顆 \(R_f\)(1k / 10k / 100k / 1M)+ 配對 \(C_f\)(100\,n / 10\,n / 1\,n / 100\,p)。
+                \texttt{TIA\_SUM} net 在這塊內走 \(< 5\) mm。
+          \item 板子上半 = 數位區:LP5907 LDO、Pico header、OLED 4-pin header。
+        \end{itemize}
+  \item \textbf{Star grounding 簡化}:這版只有單一 GND 平面(不再 GND/GNDA 分離),
+        理由是最高增益 1\,M\(\Omega\) + 12-bit ADC 的精度需求不高到需要 star grounding。
+        \emph{second-version} 的 GND/GNDA 分離是為了 16-bit ADC + 10\,M\(\Omega\) 設計,
+        這版砍掉了那層複雜度。
+  \item \textbf{Silkscreen 標示}:單一張板子上 \texttt{flico v1} + 我自己的 maker 標記 +
+        \emph{LIGHT IN} 箭頭指向 BPW34 接腳。
+\end{itemize}
+
+\subsection*{Day 5 (5/24) — JLCPCB 對單 + Basic Parts 替換 + 風險 review}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Gerber 輸出}:File \(\to\) Plot \(\to\) 勾 F.Cu / B.Cu / F.Mask / B.Mask /
+        F.Paste / B.Paste / F.Silkscreen / B.Silkscreen / Edge.Cuts,
+        + Drill files (PTH + NPTH)。產出 \texttt{Gerber/} 14 個檔。
+  \item \textbf{BOM \(+\) CPL 用 \texttt{tools/jlcpcb\_bom\_cpl.py} 一鍵生}。
+        這支 \(\sim 80\) 行 Python 從 KiCad netlist 讀 footprint + LCSC 欄位 +
+        座標 + 旋轉角,輸出符合 JLCPCB 格式的 \texttt{SOC\_Final\_BOM.csv} \(+\)
+        \texttt{SOC\_Final\_CPL.csv}。\emph{比 KiCad 內建的 "Fabrication Toolkit" 插件
+        多了一層自訂}:特別是旋轉角校正 —— 有幾顆 JLC 的元件「鳥瞰圖」跟 KiCad
+        symbol 的角度差 90°(經典坑),這支 script 對特定 part type 自動加減 90°。
+  \item \textbf{打包}:\texttt{Gerber/} + BOM + CPL 壓成 \texttt{SOC\_Final\_JLCPCB.zip}(36 KB)。
+\end{itemize}
+
+\subsection*{Day 6 (5/25) — 最後一輪錄資料 + 21:23 送 JLCPCB}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 21:58 跟 22:02 各錄一段 CSV(\texttt{flicker\_1779717476.csv} \(+\)
+        \texttt{flicker\_1779717721.csv}) —— 在送出 JLCPCB 之後,
+        對著筆電螢幕跑了兩段 \SI{20}{\second} 量測,當作「\textbf{投產前麵包板的最後狀態快照}」。
+        之後新板子到貨,可以拿這兩段 CSV 當 baseline 比對 PCB vs 麵包板。
+  \item \textbf{JLCPCB 上傳}:\texttt{SOC\_Final\_JLCPCB.zip} 上傳 \(\to\) 預覽 3D 模型
+        確認元件方向沒反 \(\to\) 5 片 PCB + PCBA \(\sim \$15\) USD + 順豐運費 \(\$12\) USD
+        \(=\) 約 NT\$ 870。預計到貨 \(\sim 7\) 天。
+\end{itemize}
+
+\subsection*{同期(5/20--25)host Rust GUI 的 UI/UX 迭代}
+
+5/19 那版只是「把訊號鏈點亮」的 minimum viable port,這 6 天平行的硬體設計過程,
+host 端每天都跟著實機量測在改:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Zoom 跟 FFT 視窗連動}:5/19 雛形;5/22 改成「拖時域視窗 \(\to\) 自動送
+        \texttt{FftJob} \(\to\) FFT 圖只算當前 visible window」。這對「在 30 秒長量測中
+        想看某 2 秒區段的閃爍頻譜」剛好對味。
+  \item \textbf{Y 軸 auto-fit}:加上 \texttt{data\_y\_range\_in\_x()} — 算當前 X 視窗
+        範圍內的 sample min/max,Y 軸跟著縮放;\emph{避免被遠處的 30 秒 outlier
+        把當前 region 壓扁成一條線}。
+  \item \textbf{CSV export}:\texttt{export\_csv()} 把 ring buffer snapshot 一次寫出,
+        檔名 \texttt{flicker\_<unix\_timestamp>.csv} 避免覆蓋。
+        \textbf{這個功能就是 5/20 那兩段 PWL 噪音輸入跟 5/25 那兩段 baseline
+        CSV 的來源} —— UI 加一個 \emph{Export CSV} 按鈕直接導,不用回 terminal 跑指令。
+  \item \textbf{Synth source toggle}:命令列 \texttt{--synth} flag,合成正弦 \(+\) 雜訊,
+        \emph{在 GUI 端開發新功能時可以不接 Pico 直接驗證}。
+  \item \textbf{Perf HUD}:\texttt{PerfRing} 顯示即時 fps + 樣本累積數,
+        方便調 zoom 時看 cost。
+  \item \textbf{Auto-detect Pico port}:macOS 掃 \texttt{/dev/cu.usbmodem*},
+        Windows 預設 COM3。\emph{插上 USB 就跑,不用每次手選 COM port}。
+\end{itemize}
+
+到 5/25 為止,host 已經從 5/19 的「\(\sim 1\,200\) 行可以動」長到 \(\sim 1\,270\) 行,
+但結構穩定下來,後續主要是 polishing 而非架構性改動。
+
+\subsection*{產物清單(\texttt{hardware/final-version/})}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \texttt{SOC\_Final.kicad\_sch / .kicad\_pcb / .kicad\_pro / .kicad\_prl}:
+        KiCad 8 專案核心檔。\emph{stem 維持 \texttt{SOC\_Final},
+        即使 repo 已改名 flico} —— KiCad 內部 cross-reference 跟 stem 綁死,
+        改 stem 要重綁整個 project,blast radius 太大,留著當\textbf{歷史包袱}。
+  \item \texttt{ERC.rpt}:5/20 15:53 第一輪 ERC 報告留檔,當時的錯誤 + warning 一覽。
+  \item \texttt{TIA\_Gain\_100M.wbk}:5/22 KiCad spice simulation workbook,
+        用 PWL 噪音餵 TIA。
+  \item \texttt{Gerber/}:14 個檔,生產用。
+  \item \texttt{tools/jlcpcb\_bom\_cpl.py}(\(\sim 80\) 行):BOM \(+\) CPL 生成器,
+        含旋轉角校正。
+  \item \texttt{tools/silkscreen\_normalize.py}(\(\sim 50\) 行):絲印字體 / 位置統一化。
+  \item \texttt{SOC\_Final\_JLCPCB.zip}(36 KB):送出 JLCPCB 的 final package。
+\end{itemize}
+
+\textbf{排除掉}:\texttt{SOC\_Final-backups/}(89 個 KiCad 自動備份 zip)、
+\texttt{*.bak\_before\_silk / \_pour / \_origin}(個人 checkpoint)、
+\texttt{.history}、\texttt{.DS\_Store}。
+
+\subsection*{今日心得(6 天總綱)}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{第三次畫 PCB 才知道要妥協什麼}。\texttt{first-version} 教我「不知道規格不要開拉」,
+        \texttt{second-version} 教我「規格還在變不要太早投產」,\texttt{final-version}
+        終於學會「\textbf{知道哪些妥協可以收得回來}」:
+        \begin{itemize}[leftmargin=2em,itemsep=0pt]
+          \item MCP6004 vs OPA328 \(\Rightarrow\) 省 NT\$100,實測沒影響
+          \item Pico 內建 ADC vs 外接 ADS8326 \(\Rightarrow\) 板子複雜度砍 30\%,host 端
+                12-bit 顯示已經夠用
+          \item 砍鋰電池 \(\Rightarrow\) BOM 少 5 顆元件、PCB 少 8\,cm\textsuperscript{2} 面積
+          \item 單 GND vs star ground \(\Rightarrow\) 1\,M\(\Omega\) 增益下噪音 budget 還有 50\%,
+                沒必要為精密板的 over-engineering 付佈線複雜度
+        \end{itemize}
+  \item \textbf{KiCad simulation workbook 用 PWL 餵實測雜訊是這個專案最大的方法論收穫}。
+        把「實體量測」跟「模擬」綁起來不是用對位的方式,而是\emph{把實測直接成模擬的輸入}。
+        感覺往後的硬體設計都會這樣用。
+  \item \textbf{host 跟 firmware 跟 hardware 一起迭代的好處非常巨大}。每一版 PCB 改規格,
+        都能立即在 host GUI 上看結果;每一個 host UI 改動,都能立即在新一段量測中驗證。
+        \emph{三條 stack 同時動,讓「改某一條 stack 不知道對下游有沒有影響」這種焦慮幾乎消失}。
+  \item \textbf{下一步}:
+        \begin{enumerate}[leftmargin=2em,itemsep=0pt]
+          \item 等 PCB 到貨(\(\sim 7\) 天),做\textbf{雙板對比}:同一段螢幕閃爍,
+                麵包板 vs PCB,看 SNR 改善多少、底噪降多少。
+          \item 把 firmware/cpp-version/ (5/12 fork) 收尾,目標
+                \(\geq \SI{32}{\kilo\hertz}\) jitter-free ADC,host Rust crate 端配合升 binary
+                frame 格式。
+          \item 開始畫\textbf{3D 列印外殼}(Fusion 360,從 5/3 提案書那張示意圖開始長),
+                把 PCB \(+\) Pico \(+\) BPW34 \(+\) OLED \(+\) Type-C 整合成可手持。
+          \item 寫 \texttt{report/main.tex} 把這 6 周的研究做完整收尾,
+                準備期末口試 demo。
+        \end{enumerate}
+\end{itemize}
