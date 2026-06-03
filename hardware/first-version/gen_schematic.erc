@@ -1,0 +1,14 @@
+ERC ERROR: Pin conflict on net LDO_BYP, NO-CONNECT pin 4/NC of LP5907MFX-3.3/U1 <==> PASSIVE pin 1/ of C/C4 (NO-CONNECT connected to PASSIVE)
+ERC WARNING: Insufficient drive current on net GNDA for pin POWER-IN pin 4/Vss of MCP3201/U4.
+ERC WARNING: Insufficient drive current on net GNDA for pin POWER-IN pin 2/V- of OPA1655DBV/U2.
+ERC WARNING: Insufficient drive current on net GNDA for pin POWER-IN pin 14/GND of TMUX1208PW/U3.
+ERC WARNING: Insufficient drive current on net GNDA for pin POWER-IN pin 2/GND of LP5907MFX-3.3/U1.
+ERC WARNING: Insufficient drive current on net VBUS_FILT for pin POWER-IN pin 1/IN of LP5907MFX-3.3/U1.
+ERC WARNING: Incorrectly connected pin: NO-CONNECT pin 4/NC of LP5907MFX-3.3/U1 should not be connected to a net (LDO_BYP).
+ERC WARNING: Unconnected pin: POWER-IN pin 3/VSS of TMUX1208PW/U3.
+ERC WARNING: Unconnected pin: PASSIVE pin 9/Pin_9 of Conn_01x10/J1.
+ERC WARNING: Unconnected pin: PASSIVE pin 10/Pin_10 of Conn_01x10/J1.
+ERC WARNING: Unconnected pin: PASSIVE pin 2/Pin_2 of Conn_01x03/J2.
+ERC INFO: 10 warnings found while running ERC.
+ERC INFO: 1 errors found while running ERC.
+
