@@ -1,0 +1,72 @@
+% =====================================================================
+%  2026-05-07 — 規劃購買烙鐵:從 TS101/TS21 比到 HS-02A
+% =====================================================================
+
+\subsection*{今日目標}
+
+4/21 光華行裡列為「可以等(網購)」的烙鐵今天決定下單。請 Gemini 幫忙做選型,
+重點是\textbf{精密 vs 通用熱容量}的取捨。
+
+\subsection*{選型重點(濃縮)}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{烙鐵頭系統決定一切}:
+        \texttt{TS / T12}(中型、耗材便宜) vs \texttt{C210}(極精密、秒熱)
+        vs \texttt{C245}(精密又有熱容、能扛粗線/BNC) —— 是兩個極端與一個中間值。
+  \item \textbf{功率不等於溫度}:功率代表回溫速度;PD 3.1 / 100 W 是目前主流。
+  \item \textbf{供電}:USB-C PD 是現代趨勢,可以用筆電充電頭、行動電源供電,
+        實驗室桌面不用再多拉一條 AC。
+  \item \textbf{安全}:自動休眠 + ESD safe + 接地 三個基本。
+\end{itemize}
+
+\subsection*{Miniware TS101 vs TS21}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{TS101} —— TS 系列(類 T12)頭,DC 5525 + USB-C 雙接口,
+        65 W (DC) / 90 W (PD),\textbf{萬用工具箱型}。
+  \item \textbf{TS21} —— C210 整合芯,僅 USB-C、100 W PD 3.1、3--5 秒熔錫,
+        全金屬機身、附補光燈,\textbf{精密手術刀型}。
+  \item 結論:TS21 的 C210 頭對螢幕貼螢幕的微焊接很順手,
+        但要焊 BNC / 粗導線時熱容會吃力 —— 對 flico 這種要焊 SFH 2440 + Pico 排針
+        + 偶爾接線材的混合場景,光 C210 太極端。
+\end{itemize}
+
+\subsection*{擴大比較範圍(不限 Miniware)}
+
+Gemini 又列了四個競品系統:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Fnirsi HS-02B}(C210)—— TS21 的直接對手,附金屬保護蓋,
+        用完不用等冷卻直接收。
+  \item \textbf{Fnirsi HS-02A}(C245)—— \emph{同系列但用 C245 較大發熱芯};
+        熱容大、能扛粗線,也保留精密能力。
+  \item \textbf{Alientek T100 / T90B}(C210 / C245)—— 韌體穩定、顯示資訊詳盡。
+  \item \textbf{PTS200 V2} —— ESP32 控制,TS / T12 通殺,開源韌體可玩。
+  \item \textbf{Pinecil V2}(TS / T12)—— 開源 IronOS,CP 值最高,
+        但機身輕到容易被線材帶走、頭至手握距離長對微焊接不利、
+        外殼塑膠感較重。
+\end{itemize}
+
+Gemini 對我的建議是「物理系學生混合場景應選 C245 系統(HS-02A 或 S99),
+C210 在焊 BNC 接頭時會吃力」 —— 這跟我的需求對上。
+
+\subsection*{購買決定 \& 物流}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 機型:\textbf{Fnirsi HS-02A}(C245 發熱芯,PD 3.1, 最高 100 W,金屬保護蓋)
+  \item 價格:\textbf{TWD 968}
+  \item 下訂單:\textbf{2026-05-07 (三) 23:33}
+  \item 到貨/取件:\textbf{2026-05-11 (日) 13:25}
+\end{itemize}
+
+\subsection*{今日心得}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 烙鐵這種「一輩子買幾次」的工具值得花一晚上做功課;
+        選錯系統(尤其是 C210 太精密扛不住粗線、或 T12 太大扛不住 SMD)
+        會卡接下來整個專案的焊接環節。
+  \item C245 是「精密 + 熱容」的中間值,符合 flico 之後要做的事:
+        SFH 2440 SMD 上轉接板、Pico 排針、BNC 杜邦線、PCB 跳線都會碰到。
+  \item Pinecil V2 雖然 CP 值漂亮但「頭至手握距離長」對 SMD 不利,排除。
+  \item 取件當天再寫一篇開箱 / 第一次焊接的日誌。
+\end{itemize}
