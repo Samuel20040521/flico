@@ -1,0 +1,414 @@
+如果我想要盡量增加pico取樣ADC的頻率，用micro python會有瓶頸嗎？需不需要改用cmake?
+
+簡單直接的回答是：是的，MicroPython 在追求極致採樣頻率時絕對會遇到瓶頸。
+
+如果你只是需要幾 kHz 的採樣率，MicroPython 還算應付得過來；但如果你想榨乾 RP2040 那顆 ADC 的硬體極限（500 ksps，即每秒 50 萬次採樣），切換到 C/C++ SDK (CMake) 是最明智的選擇。
+
+以下是為什麼 MicroPython 會成為瓶頸，以及改用 C/C++ 能帶來什麼好處的分析：
+
+1. 為什麼 MicroPython 會卡住？
+在 MicroPython 中，常見的採樣方式是使用 adc.read_u16()。這種方式存在以下問題：
+
+解釋器開銷 (Interpreter Overhead)： 每執行一行 Python 代碼，底層都要經過解釋和轉換。在微秒等級的採樣需求面前，這些毫秒或微秒級的延遲是非常致命的。
+
+中斷延遲與抖動 (Jitter)： Python 的垃圾回收機制（Garbage Collection）隨時可能啟動，這會導致採樣間隔不穩定，對於需要精確時間基準的訊號分析（如 FFT）來說，這會產生嚴重的失真。
+
+難以發揮 DMA 威力： 要達到 500 ksps，必須讓 ADC 採樣後直接透過 DMA (Direct Memory Access) 將數據搬移到內存，而不經過 CPU。雖然 MicroPython 透過特定庫（如 rp2 或 uctypes）也能操作 DMA，但代碼會變得異常複雜且難以維護。
+
+2. C/C++ SDK 的優勢
+改用 C/C++ 並配合 CMake 構建系統，你可以直接操控硬體寄存器，實現真正的「硬體級」同步。
+
+ADC FIFO 模式： RP2040 的 ADC 有一個內建的 FIFO（先進先出隊列）。在 C 語言中，你可以設定 ADC 自動以 500 kHz 的頻率連續採樣，並將結果推入 FIFO。
+
+DMA 無縫接軌： 你可以設定 DMA 引擎監控 ADC FIFO。一旦 FIFO 有資料，DMA 會在完全不佔用 CPU 資源的情況下，將資料搬運到指定的數組中。
+
+雙緩衝技術 (Double Buffering)： 你可以設置兩個緩衝區，當 DMA 在填充 A 區時，CPU 可以全力處理 B 區的數據（例如計算或儲存），這在高速採樣中非常關鍵。
+
+3. 採樣頻率對比
+特性	MicroPython (標準方法)	C/C++ SDK (DMA 模式)
+最高穩定採樣率	約 10 - 20 kHz	500 kHz (硬體上限)
+定時精確度	差 (受解釋器與 GC 影響)	極高 (由硬體時鐘控制)
+CPU 佔用率	高 (忙碌等待採樣)	極低 (DMA 自動搬運)
+開發難度	低，易於除錯	中，需配置 CMake 與 SDK
+💡 我的建議
+如果你在做原型開發： 先用 MicroPython 跑跑看，確認電路訊號沒問題。
+
+如果你需要 > 50 kHz 的頻率： 不要猶豫，直接上 C/C++。
+
+折衷方案： 如果你真的很討厭 C 語言，可以嘗試使用 PIO (Programmable I/O) 的概念，雖然 PIO 主要處理數位訊號，但它可以輔助觸發 ADC，不過這依然無法完全避開 Python 處理大數據量時的無力。
+
+總結： 想要達到 Pico 的極限採樣率，CMake + C/C++ SDK 是唯一的專業路徑。 既然你都已經考慮到頻率瓶頸了，這代表你的應用場景很可能需要這份效能。
+
+你目前正在處理的是哪一類型的訊號（例如音訊、電力監測或是射頻相關），需要達到多高的採樣率呢？
+
+那我是不是需要重新灌軟體呢？
+
+簡單來說，是的，你的開發環境（電腦端）和 Pico 上的固件（硬體端）都需要做相應的調整。
+
+這不像 MicroPython 只要把 .py 檔存進去就能跑，C/C++ 的流程更像是「打造成品」，直接把編譯好的機器碼燒錄進去。
+
+以下是具體需要做的「換裝」步驟：
+
+1. 電腦端（開發環境）的準備
+在 MicroPython 時代，你可能只用一個 Thonny IDE。但要開發 C/C++，你需要安裝一套編譯工具鏈：
+
+ARM GCC Toolchain： 這是真正的編譯器，負責把 C 代碼轉換成 Pico 能懂的指令。
+
+CMake： 這是一個構建系統，用來管理你的專案結構與編譯設定。
+
+Pico SDK： 這是官方提供的函式庫，包含所有控制 ADC、DMA 和 GPIO 的底層函數。
+
+VS Code (建議)： 雖然不是必須，但配合 Raspberry Pi Pico 擴充功能，它可以幫你自動完成上述所有工具的安裝與設定（現在官方提供的「Pico Windows Installer」非常方便，一鍵搞定）。
+
+2. Pico 端的「換裝」
+當你改用 C/C++ 開發時，Pico 的運作邏輯會發生變化：
+
+覆蓋 MicroPython： 當你把 C/C++ 編譯出來的 .uf2 檔案拖入 Pico 時，它會直接覆蓋掉原本的 MicroPython 解釋器。
+
+BOOTSEL 模式： 每次你想更新程式，都需要按住 Pico 上的 BOOTSEL 按鈕並重新插拔 USB，讓它變成一個隨身碟，然後把新的 .uf2 丟進去（或者透過偵錯器如 Picoprobe/Raspberry Pi 5 進行免插拔燒錄）。
+
+不再有交互式命令列 (REPL)： 你沒辦法像在 Thonny 裡面那樣邊打字邊看結果，所有除錯訊息通常需要透過 printf 並配合序列號監控視窗（Serial Monitor）查看。
+
+3. 轉型的心理準備
+從 MicroPython 跨越到 C/C++ SDK，你會感受到兩者巨大的差異：
+
+階段	MicroPython	C/C++ SDK
+撰寫代碼	簡潔、像寫散文	嚴謹、需要處理指標與內存分配
+編譯速度	即存即用（解釋型）	需要點擊 Build 等待編譯
+運行效能	堪用（有封印）	全速解放 (ADC 可達 500 ksps)
+硬體控制	透過封裝好的 API	可以直接操作暫存器 (Registers)
+💡 實戰小技巧
+如果你覺得從頭設定環境太麻煩，建議先去下載 Raspberry Pi Pico Windows Installer。它會自動幫你裝好 VS Code、GCC、CMake 和 SDK，省下你自己手動配置環境變數的痛苦。
+
+既然你決定要追求極限採樣率了，你是否已經有預想好要用什麼方式來儲存或傳輸這些高速產出的 ADC 數據（例如透過 USB Serial 傳回電腦，還是存進 SD 卡）？
+
+我現在的macbook pro是2019-intel chip的型號，我想要知道他的typc-c的傳輸速度夠支持最快的 500 ksps嗎？
+
+這是一個非常專業的考量。答案是：你的 MacBook Pro 2019 完全撐得住，但真正的瓶頸並不在電腦，而在 Raspberry Pi Pico 的硬體限制。
+
+我們可以從資料量（Throughput）的數據計算來看：
+
+1. 頻寬計算：500 ksps 需要多少速度？
+Pico 的 ADC 是 12-bit 解析度。在傳輸時，為了對齊內存，通常會將一個樣本封裝成 16-bit（2 Bytes）。
+
+採樣率： 500,000 samples/sec
+
+每樣本大小： 2 Bytes
+
+所需的資料傳輸率：
+
+500,000×2=1,000,000 Bytes/s=1 MB/s
+換算成比特率 (Bitrate)：
+
+1 MB/s×8=8 Mbps
+2. 你的設備端 vs. Pico 端
+你的 2019 年 Intel MacBook Pro 配備的是 Thunderbolt 3 (USB-C) 接口。
+
+MacBook Pro 傳輸上限： 高達 40 Gbps。
+
+Pico (RP2040) 硬體上限： Pico 的 USB 接口規格是 USB 1.1 Full Speed，其理論最大速度為 12 Mbps。
+
+結論： 你的電腦端頻寬（40 Gbps）是需求（8 Mbps）的 5000 倍，所以電腦端完全不是問題。
+
+3. 潛在的真正瓶頸：USB 1.1 的極限
+雖然計算出來是 8 Mbps，而 Pico 理論有 12 Mbps，但在現實開發中，這已經非常接近 Pico USB 1.1 控制器的物理極限了，原因如下：
+
+協定開銷 (Protocol Overhead)： USB 1.1 在傳輸時需要包裝封包（Headers/Checksums），實際可用的純數據頻寬通常只有 9 - 10 Mbps 左右。
+
+MicroPython 的無力： 如果使用 MicroPython 的 Serial 輸出，數據轉換成字串（ASCII）會讓資料量翻倍（例如 2048 四個字元就是 4 Bytes），絕對會塞車。
+
+C/C++ SDK 的必要性： 你必須使用 C 語言並透過 USB Bulk Transfer（以二進位 Binary 格式）直接傳送原始數據，才能穩定跑在 1 MB/s。
+
+4. 給你的建議（針對 2019 Intel MBP）
+既然你使用的是 Intel Chip 的 MacBook Pro，在改用 C++ SDK 開發時有幾個細節可以注意：
+
+編譯工具鏈： 在 Intel Mac 上安裝 arm-none-eabi-gcc 非常成熟，透過 Homebrew 即可快速配置。
+
+電力供應： 2019 MBP 的 USB-C 供電非常穩定，這對 ADC 採樣的精確度（減少電源雜訊）有正面幫助。
+
+接收端軟體： 當 Pico 以 1 MB/s 噴發數據時，電腦端的 Python 接收腳本（如使用 pyserial）需要寫得夠有效率（建議使用 read_all() 或多執行緒處理），否則電腦端的緩衝區會溢位。
+
+總結來說： 你的硬體環境完全支持這個計畫。只要你改用 C/C++ SDK 並採用 二進位傳輸，這台 MacBook Pro 處理 500 ksps 的數據就像喝水一樣簡單。
+
+你打算如何處理這些採樣後的數據？是直接在電腦上做即時繪圖，還是先存成檔案進行後續的物理分析？
+
+那我可以在python本地端接收Pico傳回的數據，只有在pico裡面使用C++就好嗎？
+
+這完全沒問題，而且這正是最高效、最推薦的開發配置：「硬體端跑 C++ 解放效能，軟體端跑 Python 處理數據」。
+
+你可以把 Pico 想像成一個高速工作的「採集工廠」，而你的 MacBook 則是「資料總部」。工廠必須用最高效的 C++ 運作，而總部可以用靈活的 Python 來分析成果。
+
+以下是實現這個架構的關鍵要點：
+
+1. 分工邏輯
+Pico 端 (C++ SDK)：
+
+使用 DMA 自動將 ADC 數據搬移。
+
+透過 stdio_usb 或是 tinyusb 函式庫，將數據以 二進位 (Binary) 格式推送到 USB 介面。
+
+重點： 千萬不要用 printf("%d", value)，因為轉換成字串會極大地降低速度。直接傳送原始的 2-byte 數據。
+
+MacBook 端 (Python)：
+
+使用 pyserial 函式庫讀取 USB 埠。
+
+接收到二進位流後，使用 struct.unpack 或 numpy.frombuffer 將其轉回數字。
+
+使用 matplotlib 或 pyqtgraph 進行即時繪圖與物理分析。
+
+2. 為什麼這樣做是可行的？
+雖然我前面提到 Python 有瓶頸，但那是針對 Pico 上的 MicroPython。
+
+你的 MacBook Pro 2019 (Intel i7/i9) 運算能力高出 Pico 數萬倍。即使 Python 本身不算快，但在處理每秒 1 MB 的資料量時，對你的電腦來說只是微小的負擔（不到 1% 的 CPU 佔用率）。
+
+3. 如何在 Python 端確保不掉幀？
+當數據以 500,000 samples/sec 湧入時，你的 Python 腳本需要注意以下幾點：
+
+使用二進位傳輸：
+
+Python
+# 這是錯誤示範 (太慢)
+data = ser.readline() 
+
+# 這是正確示範 (極快)
+raw_data = ser.read(1024) # 一次讀取一大塊二進位資料
+批次處理： 不要每收到一個數字就處理一次。先收滿 1000 個點，再用 numpy 一次性進行運算，這樣效率最高。
+
+緩衝區管理： 如果你的 Python 處理太慢，操作系統的序列埠緩衝區會爆掉。建議將「讀取數據」和「繪圖/存檔」放在不同的線程（Thread）中。
+
+4. 傳輸協議建議
+既然你是為了物理實驗或高頻採樣，我建議在傳輸時加入一個簡單的幀同步 (Frame Sync) 機制。
+
+例如：每發送 1000 個樣本，就先發送一個特定的 4-byte 標頭（如 0xDEADBEEF）。這樣 Python 端如果中途斷掉重新連接，才能正確辨認出哪一個 Byte 是數據的開始，而不會產生位移錯誤。
+
+總結你的開發路線圖
+環境： 在 MacBook 上安裝 Pico C++ SDK（用官方 Installer 很快）。
+
+Pico 代碼： 寫一段 C++ 程式，設定 ADC 自由運行 (Free-running) 並透過 DMA 傳送。
+
+編譯： 用 CMake 編譯出 .uf2 並燒錄進 Pico。
+
+PC 代碼： 寫一個簡單的 Python 腳本，用 pyserial 接收並存成檔案（例如 .npy 或 .csv）。
+
+這樣你既能擁有 500 ksps 的極速，又能享受 Python 強大的數據分析生態系。
+
+你目前的實驗對於「即時性」的要求高嗎？也就是說，你是需要邊採樣邊看到即時波形，還是採樣一段時間後再儲存起來分析即可？
+
+你可以教我怎麼在pico 上面配置C++的環境嗎？
+
+在 Intel 晶片的 MacBook Pro 上配置 Pico C++ 環境非常成熟，且現在官方推出了專為 VS Code 設計的擴充功能，讓原本複雜的編譯鏈設定變得直覺許多。
+
+以下是針對你的 macOS 環境，最推薦的配置流程：
+
+1. 第一步：安裝必備工具 (Homebrew)
+首先，你需要安裝 ARM 編譯器和 CMake。如果你還沒安裝 Homebrew，請先在終端機安裝它。接著執行：
+
+Bash
+brew install cmake arm-none-eabi-gcc libnewlib-arm-none-eabi
+這會安裝：
+
+arm-none-eabi-gcc: 負責將 C++ 代碼編譯成 ARM 指令的工具。
+
+cmake: 管理編譯流程的工具。
+
+2. 第二步：獲取官方 Pico SDK
+找一個你喜歡的地方（例如 ~/Documents/Pico），下載 SDK 本體：
+
+Bash
+mkdir ~/pico
+cd ~/pico
+git clone -b master https://github.com/raspberrypi/pico-sdk.git
+cd pico-sdk
+git submodule update --init
+關鍵步驟： 你必須在你的 shell 設定檔（例如 ~/.zshrc）中加入環境變數，這樣編譯器才找得到 SDK。
+
+開啟設定檔：nano ~/.zshrc
+
+加入這一行：export PICO_SDK_PATH=~/pico/pico-sdk (路徑請根據你實際存放位置調整)
+
+存檔離開後執行：source ~/.zshrc
+
+3. 第三步：配置 VS Code (推薦路徑)
+為了開發效率，建議使用 VS Code 並安裝以下擴充功能：
+
+Raspberry Pi Pico (官方版本): 在擴充功能商店搜尋「Raspberry Pi」，這是最簡單的整合方案。
+
+C/C++: 提供語法反白與代碼補全。
+
+CMake Tools: 讓 VS Code 知道如何執行 CMake 進行編譯。
+
+4. 第四步：建立一個簡單的測試專案
+在你的專案資料夾中（例如 hello_adc），你需要兩個核心檔案：
+
+1. CMakeLists.txt (專案設定)
+這是告訴 CMake 如何打包你的程式：
+
+CMake
+cmake_minimum_required(VERSION 3.13)
+
+# 引入 Pico SDK 的必要設定
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+project(hello_adc C CXX ASM)
+pico_sdk_init()
+
+add_executable(hello_adc main.cpp)
+
+# 讓專案可以使用標準輸出 (USB Serial)
+pico_enable_stdio_usb(hello_adc 1)
+pico_enable_stdio_uart(hello_adc 0)
+
+# 連結需要的硬體庫 (如 adc)
+target_link_libraries(hello_adc pico_stdlib hardware_adc)
+
+# 生成 .uf2 檔
+pico_add_extra_outputs(hello_adc)
+2. main.cpp (你的代碼)
+C++
+#include "pico/stdlib.h"
+#include "hardware/adc.h"
+#include <stdio.h>
+
+int main() {
+    stdio_init_all();
+    adc_init();
+    adc_gpio_init(26); // 使用 ADC0 (GP26)
+    adc_select_input(0);
+
+    while (true) {
+        uint16_t result = adc_read();
+        printf("ADC Value: %d\n", result);
+        sleep_ms(100);
+    }
+}
+5. 第五步：編譯與燒錄
+在 VS Code 下方狀態列點擊 CMake: [Debug]: Ready (或類似的 Build 按鈕)。
+
+編譯完成後，你會在專案的 build 資料夾下看到一個 hello_adc.uf2。
+
+按住 Pico 上的 BOOTSEL 鈕並插上電腦，Pico 會變成一個 RPI-RP2 的磁碟。
+
+將 hello_adc.uf2 拖進去，Pico 就會自動重啟跑你的程式了！
+
+💡 給你的進階小撇步
+二進位輸出： 當你要挑戰 500 ksps 時，請記得在 C++ 中改用 fwrite() 直接傳送原始 Byte，而不是 printf()。
+
+終端機監控： 在 Mac 上，你可以用 ls /dev/tty.usbmodem* 找到 Pico 的 Serial 埠，然後用 screen /dev/tty.usbmodemXXXX 115200 來查看輸出（或是直接用 VS Code 的 Serial Monitor）。
+
+既然環境快搞定了，你打算先從基礎的單次採樣開始測試，還是直接挑戰設定 DMA 緩衝區？如果你需要，我可以幫你草擬一份簡單的 DMA ADC 模板。
+
+brew install cmake arm-none-eabi-gcc libnewlib-arm-none-eabi
+
+==> Auto-updating Homebrew...
+
+Adjust how often this is run with HOMEBREW_AUTO_UPDATE_SECS or disable with
+
+HOMEBREW_NO_AUTO_UPDATE. Hide these hints with HOMEBREW_NO_ENV_HINTS (see `man brew`).
+
+Warning: Treating cmake as a formula. For the cask, use homebrew/cask/cmake-app or specify the `--cask` flag. To silence this message, use the `--formula` flag.
+
+Warning: No available formula with the name "libnewlib-arm-none-eabi".
+
+==> Searching for similarly named formulae and casks...
+
+Error: No formulae or casks found for libnewlib-arm-none-eabi.
+
+這是在 macOS 上安裝時常見的「名稱誤植」問題。你剛剛輸入的包名（特別是 libnewlib-arm-none-eabi）是 Linux (Ubuntu/Debian) 系統的命名方式，Homebrew 的倉庫裡並不使用這個名稱。
+
+在 Mac (Intel Chip) 上，所有的交叉編譯工具與庫都已經封裝在同一個工具鏈中了。請改用以下指令：
+
+1. 修正後的安裝指令
+請直接在終端機執行這兩行：
+
+Bash
+# 安裝 CMake
+brew install cmake
+
+# 安裝 ARM 交叉編譯工具鏈 (Homebrew 會自動處理相關庫)
+brew tap ArmMbed/homebrew-formulae
+brew install arm-none-eabi-gcc
+為什麼原本的會失敗？
+在 macOS 中，arm-none-eabi-gcc 這個包已經自帶了 newlib（嵌入式系統常用的標準 C 庫），所以不需要（也沒有）獨立的 libnewlib-arm-none-eabi 可以安裝。
+
+2. 驗證安裝是否成功
+安裝完成後，請輸入以下指令確認編譯器是否已經待命：
+
+Bash
+arm-none-eabi-gcc --version
+如果終端機噴出一串版本資訊（例如 arm-none-eabi-gcc (GNU Toolchain for the Arm...) 13.x.x），那就代表工具鏈已經準備好了。
+
+3. 別忘了 SDK 路徑（關鍵點）
+既然你剛剛遇到了安裝問題，很有可能 PICO_SDK_PATH 也還沒設定好。這步沒做，CMake 會完全不知道怎麼編譯 Pico 的程式。
+
+如果你已經按照之前的步驟將 pico-sdk 下載到了 ~/pico/pico-sdk，請確保你的 ~/.zshrc（Intel Mac 預設使用 zsh）有這幾行：
+
+Bash
+# 用 VS Code 或 nano 打開設定檔
+nano ~/.zshrc
+
+# 在檔案末尾加上這兩行
+export PICO_SDK_PATH="$HOME/pico/pico-sdk"
+export PATH="/usr/local/bin:$PATH"  # 確保 brew 安裝的路徑在最前面
+存檔後，記得執行 source ~/.zshrc 讓設定立即生效。
+
+4. 關於 Intel Mac 的小提醒
+因為你的 MacBook Pro 是 2019 Intel 版本，在編譯時的速度會比 M1/M2 稍微慢一點點，但優點是編譯工具鏈（arm-none-eabi）在 Intel 架構上非常穩定，幾乎不會遇到相容性問題。
+
+如果之後在 VS Code 裡面點擊 Build 時遇到「找不到編譯器」的錯誤，通常只要重啟 VS Code，讓它重新讀取你剛剛設定的環境變數（PICO_SDK_PATH）就能解決。
+
+工具鏈裝好後，你打算先拿官方的 hello_world 範例測試燒錄，還是直接開始寫 ADC 的採樣邏輯了？
+
+我想要知道這個可以怎麼選？
+
+看到這個畫面，代表你正在使用官方的 Pico Project Generator，這是一個非常好的開始！它可以幫你自動生成複雜的 CMakeLists.txt 檔案。
+
+針對你想要達成 「500 ksps 高速 ADC 採樣」 且 「用 C++ 開發」 的目標，我建議你按照以下設定勾選：
+
+1. Features (硬體功能)
+[必選] DMA support: 這非常關鍵！要達到 500 ksps，必須靠 DMA 把數據從 ADC 搬到記憶體，CPU 才不會卡死。
+
+[必選] HW clocks / HW timer: 高速採樣通常需要精確的時鐘控制。
+
+[可選] I2C interface: 除非你有接螢幕或其它 I2C 感測器，否則不需要。
+
+[可選] PIO interface: 雖然這目前不是必需，但 PIO 是 Pico 的精華，以後想玩更高級的數位控制可以留著。
+
+2. Stdio support (標準輸入輸出)
+[必選] Console over USB (disables other USB use): 勾選這個。這樣你才能透過那條 USB 線在電腦端用 Python (Serial) 接收數據或看 printf 的除錯訊息。
+
+注意：這會佔用 Pico 的 USB 資源來模擬串口，這對 500 ksps 的二進位傳輸是足夠的。
+
+3. Code generation options (程式碼生成)
+[必選] Generate C++ code: 因為你決定用 C++，這項一定要勾，它會幫你生成 .cpp 而不是 .c。
+
+[必選] Use project name as entry point file name: 這純粹是個人喜好，勾了會比較整齊（檔案會叫 你的專案名.cpp）。
+
+[不勾選] Enable C++ RTTI / Exceptions: 除非你非常熟悉 C++ 高階特性，否則不建議勾，這會大幅增加生成的程式體積。
+
+4. CMake Tools
+[必選] Enable CMake-Tools extension integration: 既然你要用 VS Code 開發，這項一定要勾。它會生成 .vscode 資料夾，讓 VS Code 下方的編譯與燒錄按鈕自動出現。
+
+⚠️ 一個發生的「小陷阱」
+這個產生器清單裡沒有列出 ADC (雖然它在硬體庫裡)。
+
+當你按按鈕生成專案後，你需要手動去編輯產生的 CMakeLists.txt 檔案，在 target_link_libraries 那一區塊手動加入 hardware_adc。
+
+大概會長這樣：
+
+CMake
+target_link_libraries(${PROJECT_NAME} 
+    pico_stdlib 
+    hardware_adc   # <--- 這行要自己補上去
+    hardware_dma   # 如果你剛才有勾 DMA，這裡會自動出現
+)
+總結你的點選清單：
+DMA support (為了速度)
+
+Console over USB (為了跟 Mac 連線)
+
+Generate C++ code (為了效能與靈活度)
+
+Enable CMake-Tools extension integration (為了在 VS Code 好開發)
+
+設定好這些並按「Generate」之後，你的開發環境底層就打好地基了。你打算給這個專案取什麼名字？（這會影響到產生的檔名喔！）
