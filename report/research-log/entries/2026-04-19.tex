@@ -1,0 +1,164 @@
+% =====================================================================
+%  2026-04-19 — 構想階段:從分壓電阻到 TIA、DC/AC 雙模四檔光學量測儀提案
+% =====================================================================
+
+\subsection*{緣起與初始想法}
+
+想做一台可以同時測「螢幕更新率」與「螢幕亮度」的小儀器。腦中先冒出的訊號鏈如下:
+
+\begin{quote}
+給光二極體 (PD) 一個逆偏壓,串一顆電阻把分壓墊高,再用電容把 DC 濾掉,
+之後用取樣頻率夠高的 ADC 把電壓訊號轉成數位訊號,送到電腦做傅立葉。
+\end{quote}
+
+物理直覺:光電流 \(I_p \propto\) 入射光功率;入射光功率本身是「環境亮度 (DC)」與
+「螢幕刷新/PWM 調光擾動 (AC)」的疊加。AC 用 FFT 抓峰、DC 用平均換亮度,
+兩件事一支感測器同時做。
+
+\subsection*{被導正的關鍵點:從分壓電阻到 TIA}
+
+跟 Gemini 對談時被點出:純串聯負載電阻有
+\textbf{增益-頻寬權衡 (Gain-Bandwidth Trade-off)}。
+PD 自帶接面電容 \(C_j\)。為了把微弱光電流放大成有用電壓,
+\(R_L\) 通常會選得大,但 \(R_L\) 與 \(C_j\) 會構成一個 RC 低通,
+截止頻率
+\begin{equation}
+  f_c \;=\; \frac{1}{2\pi R_L C_j}.
+  \label{eq:0503-fc}
+\end{equation}
+若我把 \(R_L\) 設到 \(\SI{1}{\mega\ohm}\)、PD 是 BPW34
+(零偏壓下 \(C_j \approx \SI{72}{\pico\farad}\)),
+代入式~\eqref{eq:0503-fc} 得 \(f_c \approx \SI{2.2}{\kilo\hertz}\) ——
+這把要量的 OLED PWM (\(\sim \SI{480}{\hertz}\) 以上的諧波)
+與部分螢幕刷新諧波都吃掉了。\textbf{要嘛犧牲增益、要嘛犧牲頻寬,無解。}
+
+解法:改用\textbf{轉阻放大器 (Transimpedance Amplifier, TIA)}。
+把 PD 接在運算放大器的反相輸入端,反相端被虛地 (Virtual Ground) 固定住,
+\(C_j\) 兩端電壓不再變動,RC 延遲就不再決定頻寬,可以同時做到「高增益」與「高頻寬」,
+方波邊緣也才會夠陡。輸出電壓
+\begin{equation}
+  V_\text{out} \;=\; I_p \, R_F .
+  \label{eq:0503-tia}
+\end{equation}
+這個觀念上的轉變是今天最大的收穫:從「分壓電路」改成「跨阻電路」之後,
+我們的設計空間突然開闊很多。
+
+\subsection*{量測目標與動機}
+
+具體想驗證四件事:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{市電 \(\SI{60}{\hertz}\) 照明閃爍} —— 家用 AC 燈泡應該會有 \(\SI{60}{\hertz}\)
+        (亮度上的能量主要在二次諧波 \(\SI{120}{\hertz}\)) 的閃爍,
+        看看實際量得到嗎?
+  \item \textbf{Apple ProMotion 變動更新率} —— iPhone 13/14 Pro 最低 \(\SI{10}{\hertz}\)、
+        15 Pro 可降到 \(\SI{1}{\hertz}\)。LTPO 真的會動嗎?能不能被光學側量到?
+  \item \textbf{OLED PWM 調光} —— 常見頻率落在 \(\SI{240}{\hertz}\) 到 \(\SI{480}{\hertz}\),
+        是否低到讓眼睛不舒服?
+  \item \textbf{螢幕峰值亮度} —— 各家 HDR 標稱的 \(\si{\candela\per\square\metre}\)
+        是真有那麼亮、還是只是行銷數字?
+\end{itemize}
+
+\subsection*{裝置構想 (提案摘要)}
+
+依上面的目標,構想一台口袋型儀器:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{雙模式}:用一顆撥動開關切 \textbf{DC mode}(讀亮度) 與
+        \textbf{AC mode}(送 FFT 抓頻率)。
+  \item \textbf{四檔增益旋鈕}:轉動波段開關切換 TIA 的回授電阻 \(R_F\)
+        (例如 \(\SI{10}{\kilo\ohm}\) / \(\SI{100}{\kilo\ohm}\) /
+        \(\SI{1}{\mega\ohm}\) / 預留一檔),
+        以覆蓋從強光到弱光的大動態範圍。
+  \item \textbf{顯示}:4 位數 7 段顯示器 (TM1637),即時顯示亮度或 FFT 峰值頻率。
+  \item \textbf{電源}:\(\SI{3.7}{\volt}\) 鋰聚合物電池 + TP4056 Type-C 充電 +
+        LDO 穩壓到 \(\SI{3.3}{\volt}\)。
+  \item \textbf{尺寸目標}:\(< \SI{50}{\milli\metre}\!\times\!\SI{50}{\milli\metre}
+        \!\times\!\SI{30}{\milli\metre}\),單手貼螢幕可量。
+\end{itemize}
+
+系統方塊圖(訊號鏈):
+
+\begin{verbatim}
+  [待測光源]
+        |
+        v
+  [Photodiode]----->[TIA + Rf 旋鈕切換增益]
+                                 |
+                +----------------+----------------+
+                v                                 v
+        [DC: LPF 取平均]              [AC: 耦合電容 + Vref 偏壓 ~1.65V]
+                |                                 |
+                +-------> [MCU ADC] <-------------+
+                              |
+                              v
+                       [DC 平均 / AC FFT]
+                              |
+                              v
+                  [4 位 7 段顯示器 (TM1637)]
+\end{verbatim}
+
+\subsection*{初步電路設計重點}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{TIA 回授}:\(R_F\) 與一顆補償電容 \(C_F\)
+        (\(\SI{10}{\pico\farad}\) 量級) 並聯,壓制 \(C_j\) 引起的高頻震盪。
+  \item \textbf{雙路訊號分離}:TIA 輸出分兩路 —— 一路 LPF (\(f_c \lesssim \SI{10}{\hertz}\))
+        取 DC 亮度;另一路 AC 耦合 + 用兩顆等值電阻分壓做
+        \(V_\text{ref} = V_\text{DD}/2 \approx \SI{1.65}{\volt}\) 偏置,
+        把 AC 訊號中心墊到 MCU ADC 可讀的正電壓區。
+  \item \textbf{AC 路高通的低頻極限}:要量到 ProMotion 的 \(\SI{1}{\hertz}\),
+        高通截止得遠低於 \(\SI{1}{\hertz}\) (例如 \(\SI{0.1}{\hertz}\)),
+        所以耦合電容 \(\times\) 後級阻抗的 \(\tau\) 要做大。
+  \item \textbf{抗混疊}:ADC 取樣率規劃 \(f_s = \SI{5}{}\sim\SI{10}{\kilo\hertz}\),
+        進 ADC 前加一階 RC LPF,\(f_c \approx f_s/2\),
+        避免 \(>f_s/2\) 的雜訊摺回打到 PWM 譜峰。
+\end{itemize}
+
+\subsection*{初步 BOM 與時程}
+
+對話中已經整理出八節提案 (動機 / 原理 / 電路 / 規格 / 外觀 / BOM / 時程 / 結語)。
+細節留在提案書本身,日誌只記重點:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item BOM:總價估 \(\textbf{TWD 580--680}\),
+        台灣本地 (光華商場、Mouser/Digi-Key 台灣站、蝦皮) 都能備齊。
+  \item 時程:\textbf{8 週} —— 第 1 週採購與環境;2--3 週麵包板原型 (TIA 調 \(R_F\)、\(C_F\));
+        4 週 ADC + DMA;5 週 FFT;6 週顯示器/旋鈕/開關整合;
+        7 週焊板 / 進外殼;8 週校準與結案。
+\end{itemize}
+
+\subsection*{今日尚未拍板的選擇}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{Op-amp}:暫定 \texttt{TL072} 或 \texttt{MCP6002} 二擇一。
+        TL072 是雙電源音響元件、單 \(\SI{3.3}{\volt}\) 不能用,
+        應該會傾向 \textbf{MCP6002} (Rail-to-Rail、CMOS、低偏壓電流),
+        但要再確認 datasheet。
+  \item \textbf{Photodiode}:暫記 \textbf{BPW34}。但 BPW34 譜響應峰值在
+        \(\SI{920}{\nano\metre}\) (近紅外),與人眼 \(V_\lambda\)
+        峰值 \(\SI{555}{\nano\metre}\) 嚴重不合,測「亮度」會失真。
+        下一步要找帶 \(V_\lambda\) 濾波的 PD,或在感光窗前加 IR-Cut。
+  \item \textbf{MCU}:STM32 系列;但對「跑得動 FFT 又便宜小巧」這個 axis 上,
+        Raspberry Pi Pico (RP2040, \(\SI{133}{\mega\hertz}\) M0+, \(\SI{264}{\kilo\byte}\)
+        RAM) 也是熱門選項。下次再評估。
+  \item \textbf{旋鈕}:純機械的波段開關手感好但有「先斷後接」的瞬間突波;
+        類比開關 IC (例如 TMUX1104) 由 MCU 控制可以避開機械抖動。
+        要不要為了極致小型化改 IC 切換,日後決定。
+\end{itemize}
+
+\subsection*{今日心得}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 最大收穫是觀念:原本以為「分壓 + 高速 ADC」就夠了,
+        其實 \(R_L C_j\) 那個低通會把 PWM 高頻砍掉。
+        TIA 的虛地直接把 \(C_j\) 對頻寬的影響拿掉,這個 trick 必記。
+  \item 「DC 模式」與「AC 模式」其實是同一個 TIA 後面接兩條 path 的問題,
+        不是兩個獨立電路;旋鈕切的是 \(R_F\),不是切模式。模式由開關控制,
+        旋鈕控的是動態範圍。
+  \item 單電源 \(\SI{3.3}{\volt}\) 系統不能直接吃 LiPo
+        (滿電 \(\SI{4.2}{\volt}\) 會燒 MCU),必須加 LDO。
+        這件事不能在 BOM 上漏掉。
+  \item 下一步 (5/4--):查 BPW34 vs SFH-2440 譜匹配、敲定 op-amp 型號、
+        把提案書整理乾淨給老師看。
+\end{itemize}
