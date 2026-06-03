@@ -1,0 +1,109 @@
+% =====================================================================
+%  2026-05-08 — Pico + MicroPython 上線,打通完整訊號鏈
+% =====================================================================
+
+\subsection*{今日目標}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 用 5/6 驗證過的 \textbf{BPW34 + MCP6004 TIA} 餵 \textbf{Raspberry Pi Pico} 做 ADC 擷取,
+        驗證對 \textbf{20 kHz PWM} 與 \textbf{120 Hz 螢幕閃爍} 的量測能力。
+  \item Pico 端\textbf{用 MicroPython 寫原型}:edit/save/run loop 比 C++ Pico SDK 的
+        CMake/編譯/燒寫快太多,先求功能跑通再說。
+        (日後若效能撐不住再轉 C++,但今天還早。)
+  \item 三段全打通:VS Code MicroPython 環境 → Pico ADC 採樣 → USB-CDC 串到 PC 端 \texttt{pyserial}。
+        (本來打算順手把 I\textsuperscript{2}C OLED 也接上,但 OLED 還沒到貨,留 5/11 採購回來再做。)
+\end{itemize}
+
+\subsection*{階段一:MicroPython + VS Code 環境驗證}
+
+第一個提示詞(精簡版,完整對話留待之後補檔):
+
+\begin{quote}\small
+請提供一個在 Raspberry Pi Pico 上運行的 MicroPython 基礎 LED 閃爍(Blink)程式碼,
+並說明如何在 VS Code 環境下透過 MicroPython 擴充功能將程式燒錄與執行。
+\end{quote}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 結果:VS Code 的 MicroPython extension 設妥,Pico 燒入 MicroPython UF2 韌體後
+        被識別為 serial device;\texttt{blink.py} 上板成功亮滅,
+        \emph{edit \(\to\) save \(\to\) run} 流程暢通。
+  \item 對應檔:\texttt{firmware/led-light-test-python-version/blink.py}(14 行,只開 \texttt{Pin("LED")} toggle)。
+        子資料夾尾巴的 \texttt{-python-version} 是為了之後若回去寫 C++/Pico-SDK 對照版本,
+        可以平行放 \texttt{led-light-test-cpp-version/} 不會打架。
+  \item \textbf{意義}:這是 flico 從「類比量電壓」進到「數位 ADC 擷取」的環境基石;
+        沒有這一步,後面所有 Python 程式都跑不起來。
+\end{itemize}
+
+\subsection*{階段二:Pico ADC 採樣與 USB-CDC 串流}
+
+第二個提示詞:
+
+\begin{quote}\small
+我需要使用 Pico 的 ADC 讀取光敏訊號,並透過 USB-CDC 即時把採樣值丟回電腦。
+請提供 \texttt{main.py} 的主程式架構,確保能穩定採樣與輸出。
+\end{quote}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item ADC 接腳:\texttt{ADC0 = GP26} 直接吃 MCP6004 TIA 的 \(V_\text{OUT}\)。
+  \item \texttt{main.py} 在 idle loop 裡:讀 \texttt{adc.read\_u16()}、換算成電壓、
+        透過 USB-CDC(\texttt{sys.stdout})往 PC 印一行純文字。
+        \textbf{今天沒有顯示器,純流式輸出。}
+  \item 對應檔:\texttt{firmware/python-version/main.py}。
+        資料夾名取 \texttt{python-version} 是為了之後可平行放 \texttt{cpp-version/} 對照,
+        本日是 MicroPython 路線。
+        (現存版本是日後幾天迭代後加上 binary streaming、74HC4051 gear 切換、GAP marker、
+        以及 SSD1306 OLED 顯示等的成熟版;
+        5/8 當天的初版只有 ADC + 印一行字到 stdout、\textbf{沒有 OLED} ——
+        OLED 是 5/11 買到自己的 0.91" 螢幕、寫 \texttt{ssd1306.py} 之後才接上去的。)
+\end{itemize}
+
+\subsection*{階段三:PC 端 pyserial 接收}
+
+第三個提示詞:
+
+\begin{quote}\small
+請寫一個在電腦(PC)端運行的 Python 腳本,透過 \texttt{pyserial} 讀取連接在 USB 埠的
+Pico 傳送出來的 ADC 採樣數據,並將資料即時列印或儲存,以便分析 TIA 電路擷取到的閃爍(Flicker)訊號。
+\end{quote}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 結果:\texttt{read\_data.py} 開 \texttt{/dev/cu.usbmodemXXX}(macOS),
+        阻塞讀 USB-CDC 行,印到 console。簡單粗暴但訊號鏈通了。
+  \item 對應檔:\texttt{host/read\_data.py}。
+        (現存版本同樣已長成完整 PyQtGraph dashboard:多 rate view table、smart auto-tracking、
+        CSV 匯出 ——這是後續幾天演化的結果,5/8 當天只有一個 \texttt{while True: print(ser.readline())}。)
+  \item \textbf{放在 host/ 而非 firmware/} 的理由:這支跑在電腦上,不在 Pico 上 —— flico 把 PC 端工具
+        統一放 \texttt{host/}。
+\end{itemize}
+
+\subsection*{動態驗證:experiment\_result.MOV}
+
+實機錄影留底:\texttt{figures/2026-05-08/experiment\_result.MOV}(21 MB)。
+畫面內容:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item 手指接近 / 遠離 BPW34 感光面
+  \item PC 端 console 同步印出 ADC 數值的擺動
+\end{itemize}
+
+\textbf{整條訊號鏈「BPW34 \(\to\) MCP6004 TIA \(\to\) Pico ADC \(\to\) USB-CDC \(\to\) PC pyserial」確認活著。}
+
+\subsection*{今日心得}
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{從類比走進數位的橋樑搭起來了} —— 5/6 還停在三用電表手動讀電壓,今天就有完整端到端的程式化擷取。
+  \item \textbf{MicroPython 對原型開發是巨大的加速}。改一行存檔就跑,
+        不用 C++ Pico SDK 那套 CMake/編譯/燒寫的循環。
+        功能跑通之後若效能不夠再改 C++,但今天還早。
+  \item \textbf{切「韌體」vs「PC 端」的界線在 commit 時就釐清}:\texttt{main.py} 放
+        \texttt{firmware/python-version/} 因為跑在 Pico 上;\texttt{read\_data.py} 放 \texttt{host/} 因為跑在電腦上。
+        兩邊以 USB-CDC ASCII / binary 協定為唯一耦合點。
+  \item \textbf{下一步}:
+        \begin{enumerate}[leftmargin=2em,itemsep=0pt]
+          \item 把 0.91" SSD1306 OLED 接上去,讓 Pico 自己也能秀瞬間電壓 —— 等 5/11 採購回來再做。
+          \item PC 端把 console print 換成 numpy FFT + 即時繪圖(後來才知道 matplotlib 在 macOS 全螢幕重繪會閃,
+                會走到 PyQtGraph)。
+          \item Pico 端 ADC 取樣率得做到 \(\geq 10\) kHz 才能可靠抓 20 kHz PWM 的諧波;
+                目前是輪詢式單樣本,要改成 DMA / timer-driven。
+        \end{enumerate}
+\end{itemize}
