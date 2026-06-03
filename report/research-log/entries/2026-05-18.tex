@@ -1,22 +1,44 @@
 % =====================================================================
-%  2026-05-18 — 設計第一版 PCB:PD_detector_pro (flico shield v1)
+%  2026-05-18 — 設計第二版 PCB:PD_detector_pro (放棄 first-version,改走 SKiDL)
 % =====================================================================
+
+\subsection*{為什麼今天叫「第二版」}
+
+\textbf{第一版是 5/8 起手的 \texttt{pico\_flicker\_shield}}(歸檔在
+\texttt{hardware/first-version/}),走 KiCad 原生 GUI workflow,從那天到今天
+總共拖了 10 天斷斷續續在改。直到今天才把這條路線真的擱置,理由有兩個:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{GUI workflow 的 diff 看不出來改了什麼}:\texttt{.kicad\_sch} 是 binary-ish
+        S-expression,連線改一條就是幾百行的座標位移 + UUID 變動。
+        每次 Gemini/Claude 提案「把這顆改成那顆」,我手動點完之後也沒法 review
+        到底改對沒對 —— git diff 完全是雜訊。
+  \item \textbf{擺件要拖滑鼠太慢}:這幾天反覆試過幾次「規格升級」假想實驗,
+        每次把 MCP6002 換成 OPA328、74HC4051 換成 TMUX1208,
+        都要在 PCB editor 重新拖一次元件位置、重新拉一次線。GUI 是
+        \emph{有狀態的編輯器},不是\emph{冪等的描述}。
+\end{itemize}
+
+決定切換成\textbf{程式化路線}:Schematic 用 \texttt{SKiDL}(Python DSL)寫,
+擺件用 \texttt{pcbnew} Python API 寫,所有設計變成「跑一支 \texttt{python}
+就能完整重建」的腳本。\texttt{pico\_flicker\_shield} 不刪 —— 留著當第一版存檔,
+新版叫 \texttt{PD\_detector\_pro},歸檔在 \texttt{hardware/second-version/}。
 
 \subsection*{今日目標}
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
   \item 把 5/12 麵包板上的「BPW34 \(+\) MCP6002 TIA \(+\) 74HC4051 mux \(+\) Pico \(+\) OLED」
-        這條訊號鏈轉成 PCB——但是\textbf{先做 first-version,不是要直接投產}。
-  \item 借這版 PCB 把 \textbf{KiCad/SKiDL 設計流程}走一遍:選 0805 SMD 規格、
-        綁 LCSC 編號、SKiDL 跑出 netlist、KiCad 匯入 + 用 Python (\texttt{pcbnew})
-        程式化擺件、輸出 Gerber/BOM/CPL。整套流程下次設計第二版時可以直接重用。
+        這條訊號鏈轉成 PCB——但是\textbf{先做 second-version,還不是要直接投產}。
+  \item 借這版 PCB 把 \textbf{SKiDL \(+\) pcbnew Python API 設計流程}走一遍:
+        SKiDL 生 netlist \(\to\) KiCad 匯入 \(\to\) 用 \texttt{pcbnew} 程式化擺件 \(\to\)
+        輸出 Gerber/BOM/CPL。整套流程下次 v3 直接重用。
   \item 順便對\textbf{元件規格做一次升級盤點}:從麵包板的 hobby-grade
         (MCP6002, 74HC4051, Pico ADC) 升到精密量測等級
         (OPA328, TMUX1208, 外接 ADS8326 16-bit SAR),
         確認規格升上去後 PCB 該長什麼樣。
 \end{itemize}
 
-\subsection*{為什麼是 \texttt{first-version} 不是 \texttt{v1.0}}
+\subsection*{為什麼是 \texttt{second-version} 不是 \texttt{v2.0}}
 
 幾個還沒收斂的關鍵問題,故意留給之後的版本解:
 
@@ -26,7 +48,7 @@
         但 SFH 2440 是 \emph{top-looker} SMD 封裝,感光面垂直 PCB 出來,
         跟「裝在耳機盒底部、光從底面進」的機構配置直接衝突 —— 要嘛走 90 度導光柱
         (3D 印透明 PETG/壓克力),要嘛改型號。今天的版本先沿用 BPW34
-        把佈線跑通,選型留到 v2 收尾。
+        把佈線跑通,選型留到 v3 收尾。
   \item \textbf{外殼方向}:「耳機盒」造型(USB-C 朝上、感光口朝下、Pico 與 PCB 平行疊)
         的機構決策今天才定下來,3D 列印外殼還在 Fusion 360 裡半成品。
   \item \textbf{ADC 軟體鏈}:把採樣率拉到 \(\SI{32}{\kilo\hertz}\) 要靠 Pico 端
@@ -35,12 +57,12 @@
   \item \textbf{電池供電}:原本想做 LiPo 內建,但 OPA328 \(+\) TMUX1208 \(+\) ADS8326
         全要 \(\SI{3.3}{\volt}\) 純淨類比電源,USB 雜訊問題用 ferrite bead \(+\) LP5907 LDO
         解。電池路徑加上 MCP73831 充電 IC \(+\) SS14 蕭特基 OR-ing,目前已畫入 schematic
-        但實體尚未在麵包板驗證,可能 v2 就把整段砍掉、改純 USB 供電。
+        但實體尚未在麵包板驗證,可能 v3 就把整段砍掉、改純 USB 供電。
 \end{itemize}
 
 所以這版定位是\textbf{流程驗證 + 規格盤點}:讓 SKiDL/pcbnew 工具鏈跑通,
 把元件升級的影響真實畫到佈線上看,但不送 JLCPCB 投產。\textbf{歸檔在
-\texttt{hardware/first-version/}。}
+\texttt{hardware/second-version/}。}
 
 \subsection*{規格升級盤點}
 
@@ -48,12 +70,12 @@
 
 \begin{table}[H]
   \centering
-  \caption{flico 從麵包板原型升級到 first-version PCB 的元件規格盤點。}
+  \caption{flico 從麵包板原型升級到 second-version PCB 的元件規格盤點。}
   \label{tab:0518-spec}
   \small
   \begin{tabular}{lll}
     \toprule
-    位置 & 麵包板版本 & first-version PCB 版本 \\
+    位置 & 麵包板版本 & second-version PCB 版本 \\
     \midrule
     Op-amp     & MCP6002 (DIP-8, 100\,pA $I_B$)
                & \textbf{OPA328} (SOT-23-5, 0.2\,pA $I_B$, RRIO, 3.3\,V) \\
@@ -70,7 +92,7 @@
     接地       & 單一 GND
                & \textbf{Star grounding}:GND \(+\) GNDA 分離,LDO 旁邊 0\,\(\Omega\) 拼回 \\
     電池       & 不接(5/11 LiPo 還沒上)
-               & MCP73831 充電 + SS14 OR-ing(畫進去但 v2 可能砍) \\
+               & MCP73831 充電 + SS14 OR-ing(畫進去但 v3 可能砍) \\
     顯示       & SSD1306 0.91" OLED via I\textsuperscript{2}C
                & 同上(複用 5/11 寫好的 \texttt{ssd1306.py}) \\
     \bottomrule
@@ -110,7 +132,7 @@ KiCad 8/10 的原生流程是 GUI:在 Schematic Editor 拉線、annotate、選 f
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
   \item \textbf{Schematic}:用 \textbf{SKiDL}(Python DSL for schematics)寫\\
-        \texttt{hardware/first-version/gen\_schematic.py}。元件用 \texttt{Part("Device", "R", ...)}
+        \texttt{hardware/second-version/gen\_schematic.py}。元件用 \texttt{Part("Device", "R", ...)}
         宣告,連線用 Python \texttt{Net} 物件 \texttt{+=}。
         產出 \texttt{pd\_detector.net}(KiCad netlist 格式)。
   \item \textbf{Footprints 綁 LCSC}:SKiDL 元件加自定義欄位
@@ -121,7 +143,7 @@ KiCad 8/10 的原生流程是 GUI:在 Schematic Editor 拉線、annotate、選 f
         指 \texttt{pd\_detector.net}。所有元件 footprint 一次跑到畫布,
         ratsnest(白色飛線)就是設計連線的全部 ground truth。
   \item \textbf{擺件靠 \texttt{pcbnew} Python API}:寫
-        \texttt{hardware/first-version/apply\_layout.py},
+        \texttt{hardware/second-version/apply\_layout.py},
         用座標把元件 一顆顆 \(\texttt{SetPosition(VECTOR2I\_MM(x, y))}\),
         透過 KiCad 內建的 Python 直譯器執行
         (路徑:\texttt{/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/.../python3})。
@@ -206,7 +228,7 @@ KiCad 8/10 的原生流程是 GUI:在 Schematic Editor 拉線、annotate、選 f
 
 \subsection*{產物 \(+\) 留檔}
 
-當天的設計 commit 到 \texttt{hardware/first-version/}:
+當天的設計 commit 到 \texttt{hardware/second-version/}:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
   \item \texttt{gen\_schematic.py}(\(\sim 300\) 行,SKiDL DSL) + \texttt{gen\_schematic\_sklib.py}
@@ -244,7 +266,7 @@ flipped island 決策一路討論到 via 規則,完整重現整天設計思路�
         \begin{enumerate}[leftmargin=2em,itemsep=0pt]
           \item \textbf{不打板。} 規格還沒收斂,直接送 JLCPCB 等於燒錢。
                 把所有「待解」項目(感測器選型、SFH 2440 機構問題、電池要不要進、
-                C++ ADC 鏈)各自獨立解掉,再做 v2。
+                C++ ADC 鏈)各自獨立解掉,再做 v3。
           \item C++ firmware 主線(5/12 fork 出來那條)繼續推:
                 ADC + PIO + DMA \(\to\) ring buffer,目標 \(\SI{32}{\kilo\hertz}\) jitter-free。
           \item Host 端 \texttt{host/} 寫 PyQtGraph 即時 dashboard,

@@ -88,6 +88,32 @@ Pico 傳送出來的 ADC 採樣數據,並將資料即時列印或儲存,以便�
 
 \textbf{整條訊號鏈「BPW34 \(\to\) MCP6004 TIA \(\to\) Pico ADC \(\to\) USB-CDC \(\to\) PC pyserial」確認活著。}
 
+\subsection*{今天另一條線:下載 KiCad,第一次嘗試畫 PCB}
+
+訊號鏈跑通之後天還沒黑,順手做了第二件事:\textbf{下載 KiCad}(8.0)、
+開了一個叫 \texttt{pico\_flicker\_shield} 的專案、試著把 5/6 麵包板上那塊 TIA
+搬到正式 schematic 上。\textbf{不是要這次就送 JLCPCB,只是想趁印象還新的時候
+把那塊電路落地成「Pico shield」形式存檔}—— 之後麵包板拆掉,還有紙本可以回顧。
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{流程選 KiCad 原生 GUI workflow}:Schematic Editor 拉線、選 symbol、
+        annotate、選 footprint。完全沒用 SKiDL(那是 5/18 才會切換的程式化路線)。
+  \item \textbf{當天的 schematic 主體}:Pico header(母排針 \(2 \times 20\)) +
+        BPW34 + MCP6002(雙 op-amp,SOIC-8 SMD) + 4 顆回授電阻
+        (1\,k / 10\,k / 100\,k / 1\,M) + 4 顆配對 \(C_f\) + 74HC4051 mux(DIP-16)
+        作為換檔元件。直接照 5/3 提案書那張電路圖畫,沒有對元件規格做升級。
+  \item \textbf{今天只完成 schematic 階段,PCB layout 沒動}—— ratsnest 還沒拉、
+        footprint 還沒擺。今天的目標是「\textbf{學會用 KiCad}」,不是「\textbf{做出來投產的 PCB}」。
+  \item 對應檔:\texttt{hardware/first-version/pico\_flicker\_shield.kicad\_sch}
+        (今天 17:08 存檔)。PCB 那個 \texttt{.kicad\_pcb} 是空白的、後續日子才會慢慢填。
+\end{itemize}
+
+\textbf{重要:這個 \texttt{first-version} 後來會被放棄。} 原因要等 5/18 才會浮上來:
+那天會發現 GUI workflow 在反覆改規格時 diff 完全沒辦法 review、改一次要拖一次 GUI,
+改用 SKiDL 程式化從零重寫,新的版本叫 \texttt{PD\_detector\_pro},歸檔在
+\texttt{hardware/second-version/}。但 \texttt{pico\_flicker\_shield} 留著當這條設計史
+的第一筆,所以 \texttt{hardware/first-version/} 不刪。
+
 \subsection*{今日心得}
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
@@ -105,5 +131,8 @@ Pico 傳送出來的 ADC 採樣數據,並將資料即時列印或儲存,以便�
                 會走到 PyQtGraph)。
           \item Pico 端 ADC 取樣率得做到 \(\geq 10\) kHz 才能可靠抓 20 kHz PWM 的諧波;
                 目前是輪詢式單樣本,要改成 DMA / timer-driven。
+          \item KiCad schematic 起手了,接下來繼續把 footprint 配齊、ratsnest 拉一拉、
+                把 PCB layout 慢慢打磨。預計花 1\(\sim\)2 週的零碎時間,
+                目標還只是「看自己畫得出來嗎」,不是「投產」。
         \end{enumerate}
 \end{itemize}
