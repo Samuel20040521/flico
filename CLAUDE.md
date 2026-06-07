@@ -77,6 +77,8 @@ flico(*flicker* + *pico*)= Raspberry Pi Pico + BPW34 光二極體 + MCP6004 TIA 
 - **C** mechanical/ stubs(fusion_pico_fixture.py/manifest/bkp/icon)+ `log.tex` 末加 `\section*{展望}` —— commit `8dd93a0`
 - **E** `.github/workflows/release-rust_flico.yml` —— commit `508cf32`
 - **F** 5 個 Gemini 對話 txt amend 進對應 entry commit(5/7、5/8、5/12 ×3)—— rebase 改寫,branch 未推送
+- **H** 根 `README.md`(專案介紹 + 資料夾結構 + 在地跑通指令)—— commit `2c59589`
+- **\~** `pico-project/main.py` 確認**不搬**(使用者 6/7 拍板)—— 內容是 5/8 那條 `while True: print(...)` 風格的 stub,功能已被 `firmware/python-version/main.py` 取代
 
 ### ❗ 還沒做
 
@@ -84,8 +86,6 @@ flico(*flicker* + *pico*)= Raspberry Pi Pico + BPW34 光二極體 + MCP6004 TIA 
 |---|---|---|
 | D | **report/main.tex 主報告**(期末交付用,研究日誌的敘事體姊妹篇) | `SOC_Final/report/{main.tex, references.bib}` |
 | G | `entries/2026-06-02.tex`(疑為研究日誌起手條目,跟 `log.tex` `\date{起始於 2026 年 6 月 2 日}` 對應) | `SOC_Final/report/research-log/entries/2026-06-02.tex` |
-| H | 根 `README.md`(repo 對外門面) | `SOC_Final/README.md` |
-| ? | `SOC_Final/pico-project/main.py`(根目錄那支,**用途不明,需問使用者**) | 同上 |
 
 ### 刻意不搬(已併入新位置或屬於雜物)
 
@@ -106,10 +106,11 @@ flico(*flicker* + *pico*)= Raspberry Pi Pico + BPW34 光二極體 + MCP6004 TIA 
 - 不要改 KiCad project stem(`SOC_Final.kicad_*`)
 - 不要改 `mechanical/fusion_pico_fixture.manifest`(Fusion 360 嵌入式腳本清單,改檔名會壞)
 
-## 目前 commit 狀態(18 個,2026-06-07 backfill 之後)
+## 目前 commit 狀態(19 個,2026-06-07 backfill 之後)
 
 ```
-<HEAD>  Add CLAUDE.md
+<HEAD>  Add README.md
+0d06a1e Add CLAUDE.md
 8dd93a0 Add mechanical/ stubs + 展望 section: future-work response to maker spirit
 508cf32 Add release-rust_flico CI workflow
 90ecc45 Add host/convert.py + measured-noise PWL + 4 baseline CSVs: companion to 2026-05-20 entry
