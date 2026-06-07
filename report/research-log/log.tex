@@ -119,5 +119,88 @@
 % \logentry{YYYY-MM-DD}{當日標題}
 % \input{entries/YYYY-MM-DD}
 
+% =====================================================================
+%  展望(未來工作 / 創客精神回應)
+%  ── 不綁日期,放在所有日誌條目之後、bibliography 之前。
+% =====================================================================
+\clearpage
+\section*{展望:把創客精神接著做下去}
+\addcontentsline{toc}{section}{展望:把創客精神接著做下去}
+\markboth{展望}{展望}
+
+老師在這門課第二堂就鼓勵大家要拾起「\textbf{創客精神}」——
+\textbf{自己畫 PCB}、\textbf{自己 3D 列印做整機外殼},不要只停在
+breadboard 跟現成模組。這段話我有聽進去,而且整個學期都在按這個方向走。
+這篇展望把「已經做到的」跟「還在學的」並排寫下來,當作本研究日誌的句點
+與下學期的起手式。
+
+\subsection*{已經做到的:畫 PCB(從 GUI 到程式化,再回到 GUI)}
+
+PCB 這條線一共走了三版,故事完整收在 \texttt{hardware/} 底下:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{hardware/first-version/}(\texttt{pico\_flicker\_shield})——
+        5/8 那天下載 KiCad 8.0 用原生 GUI workflow 起手,
+        當作「\textbf{先學會這個工具}」的試水溫。schematic 畫完就被擱置,
+        沒進到 PCB layout。沒有投產,但留作設計史第一筆。
+  \item \textbf{hardware/second-version/}(\texttt{PD\_detector\_pro})——
+        5/18 整個用 SKiDL 程式化重寫,連 layout 都靠 \texttt{apply\_layout.py}
+        以 \texttt{pcbnew} Python API 自動擺件。最大的領悟是
+        \textbf{flipped analog island} 把 \texttt{TIA\_SUM} trace 從
+        \(\sim \SI{30}{\milli\meter}\) 砍到 \(< \SI{5}{\milli\meter}\)。
+        因為規格還在動所以同樣沒投產,但證明了「程式化生成 schematic 是可能的」。
+  \item \textbf{hardware/final-version/}(\texttt{SOC\_Final})——
+        5/20\(\sim\)5/25 六天連續工作,回到 GUI workflow(因為設計已收斂、
+        SKiDL 的可重做性反而 over-engineering),做了 5 處務實妥協(MCP6004 / 74HC4051 /
+        BPW34 / Pico 內部 ADC / 砍鋰電池)、跑了\textbf{實測噪音 \(\to\) PWL \(\to\) Spice} 的
+        交叉驗證,5/25 晚上 21:23 把 \texttt{SOC\_Final\_JLCPCB.zip} 上傳 JLCPCB,
+        \textbf{真的有送出去製版}。
+\end{itemize}
+
+\textbf{創客精神「自己畫 PCB」的這一面,我已經實際做到了一次完整投產}。
+
+\subsection*{進行中:3D 列印整機外殼(Fusion 360)}
+
+3D 列印這一面還在學。產出收在 \texttt{mechanical/} 底下,目前是\textbf{起手 stub},
+不是成品:
+
+\begin{itemize}[leftmargin=2em,itemsep=0pt]
+  \item \textbf{\texttt{mechanical/fusion\_pico\_fixture.py}}:Fusion 360 嵌入式 Python script,
+        透過 \texttt{adsk.core} / \texttt{adsk.fusion} API 程式化生成
+        \textbf{Pico + SFH 2440 photodiode 的 parametric fixture}。
+        housing 60 \(\times\) 30 \(\times\) \SI{20}{\milli\meter}、
+        Pico pocket、USB 切口、photodiode 凹槽、光圈通孔等參數都集中在檔頭常數,
+        改一個參數重跑就生新模型。
+  \item \textbf{\texttt{mechanical/fusion\_pico\_fixture.manifest}}:Fusion 360 add-in 的清單
+        檔,用來把上面那支 \texttt{.py} 嵌進 Fusion 360 的 Scripts and Add-Ins 列表,
+        以後直接從 UI 點開就能跑。
+  \item \textbf{\texttt{mechanical/fusion\_pico\_fixture\_bkp.py}} \(+\) \texttt{ScriptIcon.svg}:
+        前一個版本的備份 \(+\) 自製 script icon。
+\end{itemize}
+
+選\textbf{程式化建模(Fusion 360 Python API)而非滑鼠拖拉}的理由,跟 PCB 那條線
+從 SKiDL 學到的東西同源:\textbf{用程式描述設計意圖,以後改規格只要改參數重跑,
+不用回到 GUI 一個個拉}。雖然這邊還沒成熟到能 print 出整機外殼,但起手的方向已經對齊。
+
+\textbf{接下來要做的}:
+
+\begin{enumerate}[leftmargin=2em,itemsep=0pt]
+  \item PCB 預計從 JLCPCB 寄回約 7\(\sim\)10 天,先做最小可行性驗證(power-on、ADC 採樣、
+        OLED 點亮);
+  \item 同步把 \texttt{fusion\_pico\_fixture.py} 從 fixture 升級到「整機外殼」——
+        除了 Pico 跟 photodiode 之外,還要把主板 PCB(50 \(\times\) \SI{25}{\milli\meter})
+        嵌進去、USB 開孔對齊、留 OLED 視窗;
+  \item 印出來、把 PCB \(+\) Pico \(+\) BPW34 真的裝進去、開機跑一次 demo;
+  \item 把整個 demo 過程錄影、配上正式期末報告(\texttt{report/main.tex},研究日誌的
+        \textbf{敘事體姊妹篇})作為交付。
+\end{enumerate}
+
+\subsection*{尾聲}
+
+這份研究日誌從 4/19 一個分壓電阻的構想開始、走過兩次光華電子採購、四種 host
+端繪圖技術疊代、三版 PCB、實測噪音餵 spice 跑 Bode 圖、再到 JLCPCB 投產。
+整段路徑剛好對應老師那堂課畫的「\textbf{創客的精神就是把自己想到的東西真的做出來}」
+那條線。\textbf{我有聽進去,而且正在努力執行。下一個學期繼續做下去。}
+
 \printbibliography
 \end{document}
