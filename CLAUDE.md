@@ -78,13 +78,13 @@ flico(*flicker* + *pico*)= Raspberry Pi Pico + BPW34 光二極體 + MCP6004 TIA 
 - **E** `.github/workflows/release-rust_flico.yml` —— commit `508cf32`
 - **F** 5 個 Gemini 對話 txt amend 進對應 entry commit(5/7、5/8、5/12 ×3)—— rebase 改寫,branch 未推送
 - **H** 根 `README.md`(專案介紹 + 資料夾結構 + 在地跑通指令)—— commit `2c59589`
+- **D** `report/main.tex` 期末主報告 + `references.bib`(從零撰寫,SOC_Final 那版只是空模板)—— commit `3129000`,10 頁
 - **\~** `pico-project/main.py` 確認**不搬**(使用者 6/7 拍板)—— 內容是 5/8 那條 `while True: print(...)` 風格的 stub,功能已被 `firmware/python-version/main.py` 取代
 
 ### ❗ 還沒做
 
 | # | 缺什麼 | SOC_Final 來源 |
 |---|---|---|
-| D | **report/main.tex 主報告**(期末交付用,研究日誌的敘事體姊妹篇) | `SOC_Final/report/{main.tex, references.bib}` |
 | G | `entries/2026-06-02.tex`(疑為研究日誌起手條目,跟 `log.tex` `\date{起始於 2026 年 6 月 2 日}` 對應) | `SOC_Final/report/research-log/entries/2026-06-02.tex` |
 
 ### 刻意不搬(已併入新位置或屬於雜物)
