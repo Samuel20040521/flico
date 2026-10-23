@@ -1,0 +1,284 @@
+% flico TIA stage — MCP6004 + BPW34 + 74HC4051 switchable R||C feedback
+% Compile: xelatex tia_mcp6004.tex
+% Embed:   \includegraphics{schmatic/tia_mcp6004}
+\documentclass[border=10pt]{standalone}
+\usepackage{amsmath}
+\usepackage{circuitikz}
+\usetikzlibrary{calc}
+\ctikzset{bipoles/length=1.0cm}
+
+% Macro: parallel R||C between two points (left & right), with vertical offset
+% #1=left coord, #2=right coord, #3=R label, #4=C label, #5=vertical offset
+\newcommand{\rcpar}[5]{%
+  \draw ($(#1)+(0,#5)$)  -- ($(#1)+(0,-#5)$);
+  \draw ($(#2)+(0,#5)$)  -- ($(#2)+(0,-#5)$);
+  \draw ($(#1)+(0,#5)$)  to[R, l=#3] ($(#2)+(0,#5)$);
+  \draw ($(#1)+(0,-#5)$) to[C, l=#4] ($(#2)+(0,-#5)$);
+}
+
+\begin{document}
+\begin{circuitikz}[american, font=\small, line width=0.7pt]
+
+  %==================================================================
+  % Op-amp (MCP6004) — 1.8x larger, V+ on top via yscale=-1.8
+  %==================================================================
+  \node [op amp, xscale=1.8, yscale=-1.8] (OA) at (0,0) {};
+  \node[font=\small] at (OA.center) {MCP6004};
+
+  %==================================================================
+  % V+ bias divider (1.8k to LEFT to avoid V_out routing on the right)
+  %   3.3V --[56k]-- (Vp_j) -- (V+)
+  %   GND  --[1.8k]-- (Vp_j)   (going left)
+  %==================================================================
+  \coordinate (Vp_pin) at (OA.+);
+  \coordinate (Vp_j)   at ($(Vp_pin)+(0,0.55)$);
+  \draw (Vp_pin) -- (Vp_j);
+  \node[circ] at (Vp_j) {};
+
+  % 56k UP, then Stealth arrow to +3.3V rail
+  \draw (Vp_j) to[R, l_=$56\,\mathrm{k}\Omega$] ++(0,1.9) coordinate (R56_top);
+  \node[circ] at (R56_top) {};
+  \draw[-{Stealth[length=3mm,width=2.4mm]}, line width=0.8pt]
+        (R56_top) -- ++(0,0.5)
+        node[above, font=\footnotesize] {$+3.3\,\mathrm{V}$};
+
+  % 1.8k LEFT to GND
+  \coordinate (Gp_l) at ($(Vp_j)+(-2.8,0)$);
+  \draw (Gp_l) to[R, l=$1.8\,\mathrm{k}\Omega$] (Vp_j);
+  \draw (Gp_l) -- ++(0,-0.35) node[ground]{};
+
+  % V+ divider value annotation (next to Vp_j junction)
+  \node[font=\footnotesize, anchor=west] at ($(Vp_j)+(1.4,0.25)$)
+    {$V_+ = \dfrac{1.8\,\mathrm{k}\Omega}{56\,\mathrm{k}\Omega + 1.8\,\mathrm{k}\Omega}\cdot 3.3\,\mathrm{V} = 0.102\,\mathrm{V}$};
+
+  %==================================================================
+  % V- rail going down, with 4 feedback junctions
+  %==================================================================
+  \coordinate (Vm_pin) at (OA.-);
+  \coordinate (Vm_top) at ($(Vm_pin)+(0,-1.1)$);
+  \draw (Vm_pin) -- (Vm_top);
+
+  \coordinate (j1) at ($(Vm_top)+(0,-0.6)$);
+  \coordinate (j2) at ($(Vm_top)+(0,-2.4)$);
+  \coordinate (j3) at ($(Vm_top)+(0,-4.2)$);
+  \coordinate (j4) at ($(Vm_top)+(0,-6.0)$);
+
+  \draw (Vm_top) -- (j4);
+  \foreach \p in {j1,j2,j3,j4} { \node[circ] at (\p) {}; }
+
+  % PD below j4
+  \coordinate (PD_top) at ($(j4)+(0,-0.5)$);
+  \draw (j4) -- (PD_top);
+  \draw (PD_top) to[pD, l_={BPW34}, invert] ++(0,-1.4) node[ground]{};
+
+  %==================================================================
+  % Four R||C feedback branches (V- -> MUX Y0..Y3)
+  %==================================================================
+  \def\branchSpan{4.0}     % horizontal span from j_i to Y_i
+  \def\lShift{0.5}         % L_i offset from j_i
+  \def\rShift{3.5}         % R_i offset from j_i
+  \def\rcOff{0.5}          % vertical offset of R / C from branch centerline
+
+  \foreach \i [count=\k] in {1,2,3,4} {
+    \coordinate (L\i) at ($(j\i)+(\lShift,0)$);
+    \coordinate (R\i) at ($(j\i)+(\rShift,0)$);
+    \coordinate (Y\the\numexpr\i-1\relax) at ($(j\i)+(\branchSpan,0)$);
+    \draw (j\i) -- (L\i);
+    \draw (R\i) -- ($(j\i)+(\branchSpan,0)$);
+  }
+
+  \rcpar{L1}{R1}{$1\,\mathrm{M}\Omega$}{$10\,\mathrm{pF}$}{\rcOff}
+  \rcpar{L2}{R2}{$100\,\mathrm{k}\Omega$}{$100\,\mathrm{pF}$}{\rcOff}
+  \rcpar{L3}{R3}{$10\,\mathrm{k}\Omega$}{$1\,\mathrm{nF}$}{\rcOff}
+  \rcpar{L4}{R4}{$1\,\mathrm{k}\Omega$}{$10\,\mathrm{nF}$}{\rcOff}
+
+  %==================================================================
+  % MUX 74HC4051
+  %==================================================================
+  \coordinate (M_LT) at ($(Y0)+(0,0.7)$);
+  \coordinate (M_LB) at ($(Y3)+(0,-0.7)$);
+  \coordinate (M_RT) at ($(M_LT)+(2.3,0)$);
+  \coordinate (M_RB) at ($(M_LB)+(2.3,0)$);
+  \draw[line width=0.8pt] (M_LT) rectangle (M_RB);
+  \node[font=\footnotesize, align=center] at ($(M_LT)!0.5!(M_RB)$) {74HC4051\\MUX};
+
+  \node[right=2pt, font=\scriptsize] at (Y0) {Y0};
+  \node[right=2pt, font=\scriptsize] at (Y1) {Y1};
+  \node[right=2pt, font=\scriptsize] at (Y2) {Y2};
+  \node[right=2pt, font=\scriptsize] at (Y3) {Y3};
+
+  % Z output (right-middle)
+  \coordinate (Z_pin) at ($(M_RT)!0.5!(M_RB)$);
+  \node[left=2pt, font=\scriptsize] at (Z_pin) {Z};
+  \draw (Z_pin) -- ++(0.8,0) coordinate (Z_ext);
+
+  % S0, S1 control (bottom) — labels go INSIDE the MUX, wires routed to Pico
+  \coordinate (S0) at ($(M_LB)!0.35!(M_RB)$);
+  \coordinate (S1) at ($(M_LB)!0.65!(M_RB)$);
+  \node[above=1pt, font=\scriptsize] at (S0) {S0};
+  \node[above=1pt, font=\scriptsize] at (S1) {S1};
+
+  %==================================================================
+  % Pico (RP2040) — moved UP to make room for OLED below
+  %==================================================================
+  \coordinate (Pico_LT) at (9.0,  1.5);
+  \coordinate (Pico_RB) at (12.5,-3.5);
+  \draw[line width=0.8pt] (Pico_LT) rectangle (Pico_RB);
+  \node[font=\footnotesize, align=center]
+    at ($(Pico_LT)!0.5!(Pico_RB)+(0.5,0)$) {Raspberry\\Pi Pico\\(RP2040)};
+
+  % Left-side pins
+  \coordinate (P_VDD)  at (9.0,  1.0);
+  \coordinate (P_ADC)  at (9.0, -0.2);
+  \coordinate (P_GP10) at (9.0, -1.4);
+  \coordinate (P_GP11) at (9.0, -2.6);
+  \node[anchor=west, font=\scriptsize, inner sep=3pt] at (P_VDD)  {3V3};
+  \node[anchor=west, font=\scriptsize, inner sep=3pt] at (P_ADC)  {GP26 / ADC0};
+  \node[anchor=west, font=\scriptsize, inner sep=3pt] at (P_GP10) {GP10};
+  \node[anchor=west, font=\scriptsize, inner sep=3pt] at (P_GP11) {GP11};
+
+  % Bottom-side I2C pins
+  \coordinate (P_GP4) at (10.0, -3.5);
+  \coordinate (P_GP5) at (11.5, -3.5);
+  \node[anchor=south west, font=\scriptsize, inner sep=2pt] at (P_GP4) {GP4};
+  \node[anchor=south west, font=\scriptsize, inner sep=2pt] at (P_GP5) {GP5};
+
+  % USB-CDC output pin (right edge of Pico) — long extension
+  \coordinate (P_USB) at (12.5, -1.0);
+  \draw (P_USB) -- ++(2.5, 0) coordinate (USB_ext);
+  \node[font=\scriptsize, above=2pt] at ($(P_USB)!0.5!(USB_ext)$) {USB-CDC};
+
+  %==================================================================
+  % 0.91" OLED (SSD1306, 128x32 -> 4:1 aspect) below Pico — I2C on GP4/GP5
+  %==================================================================
+  \coordinate (OLED_LT) at (9.0, -5.0);
+  \coordinate (OLED_RB) at (13.0, -6.0);
+  \draw[line width=0.8pt, fill=black!8] (OLED_LT) rectangle (OLED_RB);
+
+  % Pixel area (dark screen, simulating OLED look)
+  \coordinate (Pix_LT) at ($(OLED_LT)+(0.20, -0.18)$);
+  \coordinate (Pix_RB) at ($(OLED_RB)+(-0.20, +0.18)$);
+  \fill[black!92] (Pix_LT) rectangle (Pix_RB);
+
+  % Simulated display content (cyan-on-dark mimics SSD1306 look)
+  \node[text=cyan!40!white, font=\scriptsize\ttfamily, align=center]
+    at ($(Pix_LT)!0.5!(Pix_RB)$)
+    {flico\quad gear:100k\\$V_\mathrm{out}=0.679$\,V};
+
+  % SSD1306 identification label below OLED
+  \node[font=\tiny, anchor=north]
+    at ($(OLED_LT |- OLED_RB)!0.5!(OLED_RB)+(0,-0.05)$)
+    {0.91" SSD1306\ \ 128$\times$32 (4:1)};
+
+  % Top pins (SDA / SCL)
+  \coordinate (O_SDA) at (10.0, -5.0);
+  \coordinate (O_SCL) at (11.5, -5.0);
+  \node[anchor=north west, font=\scriptsize, inner sep=2pt] at (O_SDA) {SDA};
+  \node[anchor=north west, font=\scriptsize, inner sep=2pt] at (O_SCL) {SCL};
+
+  % I2C bus wires (Pico GP4/GP5 -> OLED SDA/SCL)
+  \draw (P_GP4) -- (O_SDA);
+  \draw (P_GP5) -- (O_SCL);
+  \node[font=\scriptsize, anchor=west]
+    at ($(P_GP5)!0.5!(O_SCL)+(0.15,0)$) {I$^2$C};
+
+  %==================================================================
+  % +3.3V rail extends right to Pico VDD
+  %==================================================================
+  \draw (R56_top) -| (8.5, 1.0) -- (P_VDD);
+
+  %==================================================================
+  % Op-amp output -> V_out node -> branches: (a) feedback to MUX Z, (b) Pico ADC
+  %==================================================================
+  \coordinate (Vout_n) at ($(OA.out)+(0.8,0)$);
+  \draw (OA.out) -- (Vout_n);
+  \node[above=1pt, font=\footnotesize] at (Vout_n) {$V_\mathrm{out}$};
+
+  \coordinate (Vt) at (6.7, 0);
+  \draw (Vout_n) -- (Vt);
+  \node[circ] at (Vt) {};
+  \draw (Vt) |- (Z_ext);                      % feedback to MUX Z
+  \draw (Vt) -| (8.7,-0.2) -- (P_ADC);        % branch to Pico ADC0
+
+  %==================================================================
+  % S0, S1 routed under MUX, then up into Pico GP10 / GP11
+  %==================================================================
+  \draw (S0) -- ++(0,-0.5) -| (8.3,-1.4) -- (P_GP10);
+  \draw (S1) -- ++(0,-0.9) -| (8.6,-2.6) -- (P_GP11);
+
+  %==================================================================
+  % USB-CDC output stream (3-byte frames + ASCII headers, see firmware)
+  %==================================================================
+  \node[anchor=west, font=\ttfamily\scriptsize, align=left,
+        draw=gray!60, line width=0.4pt, rounded corners=2pt,
+        inner sep=5pt, fill=gray!4] (stream_box)
+    at ($(USB_ext)+(0.15,0)$) {%
+\# MODE=MON\\
+\# RATE=16000\\
+A0 4B 03\\
+A0 4D 03\\
+A1 92 01\\
+A1 93 01\\
+$\vdots$\\
+\# GAP=12};
+
+  %==================================================================
+  % Arrow into the host laptop (rust_flico GUI)
+  %==================================================================
+  \draw[-{Stealth[length=3.5mm,width=2.6mm]}, line width=0.7pt]
+    (stream_box.east) -- ++(0.7, 0) coordinate (lap_in);
+
+  %==================================================================
+  % Laptop screen (rust_flico Live FFT rendering)
+  %==================================================================
+  \begin{scope}[shift={(lap_in)}]
+    % Laptop lid + screen frame
+    \draw[rounded corners=5pt, fill=gray!12, line width=0.9pt]
+      (0.2, 2.5) rectangle (6.2, -2.5);
+    % Laptop base (trapezoid)
+    \draw[fill=gray!25, line width=0.9pt]
+      (0.15, -2.5) -- (-0.30, -3.1) -- (6.70, -3.1) -- (6.25, -2.5) -- cycle;
+    % Inner screen (white)
+    \fill[white] (0.5, 2.2) rectangle (5.9, -2.2);
+    \draw[gray!50, line width=0.3pt] (0.5, 2.2) rectangle (5.9, -2.2);
+
+    % Title bar
+    \fill[blue!15] (0.5, 2.2) rectangle (5.9, 1.85);
+    \draw[gray!50, line width=0.3pt] (0.5, 1.85) -- (5.9, 1.85);
+    \node[font=\scriptsize, anchor=west, text=blue!50!black]
+      at (0.6, 2.025) {\textbf{rust\_flico} — Live FFT};
+
+    % Plot axes
+    \draw[gray, line width=0.4pt] (0.80, -1.80) -- (5.75, -1.80);  % x-axis
+    \draw[gray, line width=0.4pt] (0.80, -1.80) -- (0.80,  1.50);  % y-axis
+
+    % FFT bars — peak at 100 Hz, harmonics at 200 Hz / 300 Hz
+    \foreach \i/\h in {0/0.10, 1/0.08, 2/0.07, 3/0.12, 4/0.16, 5/3.05,
+                       6/0.55, 7/0.22, 8/0.16, 9/0.13, 10/1.55, 11/0.30,
+                       12/0.20, 13/0.15, 14/0.60, 15/0.14, 16/0.12,
+                       17/0.10, 18/0.10, 19/0.42} {
+      \pgfmathsetmacro{\xp}{0.85 + \i * 0.245}
+      \draw[blue!70!cyan, line width=1pt]
+        (\xp, -1.80) -- (\xp, {-1.80+\h});
+    }
+
+    % X-axis frequency labels
+    \foreach \x/\l in {0.85/0, 2.075/100, 3.30/200, 4.525/300} {
+      \node[font=\tiny, anchor=north] at (\x, -1.85) {\l};
+    }
+    \node[font=\tiny, anchor=west] at (5.55, -1.85) {Hz};
+
+    % Peak callout
+    \node[font=\tiny, anchor=south, text=blue!60!black]
+      at (2.075, 1.28) {100\,Hz peak};
+
+    % Y-axis label
+    \node[font=\tiny, rotate=90, anchor=south] at (0.58, 0) {amp (dB)};
+  \end{scope}
+
+  % Label under the laptop
+  \node[font=\scriptsize, anchor=north]
+    at ($(lap_in)+(3.20, -3.25)$) {Laptop / Rust GUI (\texttt{rust\_flico})};
+
+\end{circuitikz}
+\end{document}

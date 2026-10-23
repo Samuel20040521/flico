@@ -1,0 +1,41 @@
+% Standalone schematic — inverting op-amp (classic negative feedback)
+% Compile: xelatex negative_feedback.tex   (or pdflatex)
+% Embed:  \includegraphics{schmatic/negative_feedback}
+\documentclass[border=8pt]{standalone}
+\usepackage{circuitikz}
+\usetikzlibrary{calc}
+\ctikzset{bipoles/length=1.3cm}
+
+\begin{document}
+\begin{circuitikz}[american, font=\small, line width=0.7pt]
+
+  % ---- Op-amp ----
+  \node [op amp, yscale=1] (OA) at (0,0) {};
+
+  % ---- Inverting input summing junction ----
+  \coordinate (A) at ($(OA.-) + (-0.6,0)$);
+  \draw (OA.-) -- (A);
+  \node[circ] at (A) {};
+
+  % ---- Input resistor R1 ----
+  \draw (A) to[R, l_=$R_1$, -o] ++(-3.0,0)
+        node[left] {$v_\mathrm{in}$};
+
+  % ---- Feedback resistor R_f (top path) ----
+  \coordinate (B) at ($(A)        + (0,1.7)$);
+  \coordinate (C) at ($(OA.out)   + (0.7,1.7)$);
+  \draw (A) -- (B)
+        to[R, l=$R_f$] (C);
+
+  % ---- Output node ----
+  \coordinate (D) at ($(OA.out) + (0.7,0)$);
+  \node[circ] at (D) {};
+  \draw (OA.out) -- (D) -- (C);
+  \draw (D) to[short, -o] ++(1.4,0)
+        node[right] {$v_\mathrm{out}$};
+
+  % ---- Non-inverting input to ground ----
+  \draw (OA.+) -- ++(-0.6,0) node[ground] {};
+
+\end{circuitikz}
+\end{document}

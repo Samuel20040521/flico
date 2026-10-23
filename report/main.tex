@@ -21,16 +21,24 @@
 \pagestyle{fancy}\fancyhf{}
 \renewcommand{\headrulewidth}{0.4pt}
 \lhead{\leftmark}\rhead{\thepage}
-\parindent=24pt
+% 段落不縮排,改以段間空行區隔,提升閱讀流暢度
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7em plus 0.15em minus 0.05em}
 
 % ---- 數學與符號 ----------------------------------------------------
 \usepackage{amsmath,amsthm,amssymb,amsbsy,bm}
 \usepackage{siunitx}
 
+% ---- 流程圖----------------------------------------------------
+\usepackage{smartdiagram}
+\usesmartdiagramlibrary{additions} % 擴充功能
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 % ---- 圖、表 --------------------------------------------------------
 \usepackage{graphicx}
 \graphicspath{%
   {figures/}%
+  {schmatic/}%
   {research-log/figures/2026-05-06/}%
   {research-log/figures/2026-05-12/}%
   {research-log/figures/2026-05-18/}%
@@ -43,6 +51,7 @@
 \usepackage{multirow}
 \usepackage{longtable}
 \usepackage{enumitem}
+\usepackage{makecell}
 
 % ---- 連結 ----------------------------------------------------------
 \usepackage{xcolor}
@@ -73,176 +82,226 @@
 
 % =====================================================================
 \begin{abstract}
-  \noindent\textbf{flico}(\textit{flicker} \(+\) \textit{pico})是一台以
-  \textbf{Raspberry Pi Pico} 為核心、自製的螢幕 / 光源閃爍(flicker)量測儀。
-  光訊號由 Vishay \textbf{BPW34} 矽 PIN 光二極體接收,經 Microchip
-  \textbf{MCP6004} 跨阻放大器(TIA,transimpedance amplifier)轉成電壓,
-  由 Pico 內部 12-bit ADC 取樣後,一路透過 USB-CDC 串列傳到桌面端的 \textbf{Rust GUI}
-  即時繪出時域波形與 FFT 頻譜,另一路由 0.91 吋 I\textsuperscript{2}C OLED
-  獨立顯示瞬時電壓。
+	\noindent\textbf{flico}(\textit{flicker} \(+\) \textit{pico})是一台以
+	\textbf{Raspberry Pi Pico} 為核心、自製的螢幕 / 光源閃爍(flicker)量測儀。
+	光訊號由 Vishay \textbf{BPW34} 矽 PIN 光二極體接收,經 Microchip
+	\textbf{MCP6004} 跨阻放大器(TIA,transimpedance amplifier)轉成電壓,
+	由 Pico 內部 12-bit ADC 取樣後,一路透過 USB-CDC 串列傳到桌面端的 \textbf{Rust GUI}
+	即時繪出時域波形與 FFT 頻譜,另一路由 0.91 吋 I\textsuperscript{2}C OLED
+	獨立顯示瞬時電壓。
 
-  \medskip
-  本份報告對應的硬體狀態是\textbf{送 JLCPCB 製版之前的麵包板原型}:
-  MCP6004(只用其中一個 op-amp)\(+\) 74HC4051 8 通道類比 mux(只啟用 4 個通道)
-  \(+\) 4 檔 gain(\(R_f \in \{\SI{1}{\kilo\ohm}, \SI{10}{\kilo\ohm},
-  \SI{100}{\kilo\ohm}, \SI{1}{\mega\ohm}\}\))。\textbf{4 檔 \(R_f C_f\) 乘積
-  全部對齊成 \SI{10}{\micro\second}},使各檔截止頻率\textbf{一致}收斂到
-  \(f_c \approx \SI{16}{\kilo\hertz}\)。整套裝置的物料成本約\textbf{新台幣 435 元},
-  證明「自己動手做光學儀器」在大學專題層級是可行的。報告最後說明已送製、
-  仍在運送途中的 PCB 版規格升級路線:\textbf{OPA320 \(+\) TMUX1208 \(+\) 8 檔
-  \(R_f\) (\(\SI{10}{\ohm}\) 到 \(\SI{100}{\mega\ohm}\)) \(+\) SFH 2440
-  類人眼光譜光二極體 \(+\) 3D 列印整機外殼}。
+	\medskip
+	本份報告對應的硬體狀態是\textbf{送 JLCPCB 製版之前的麵包板原型}:
+	MCP6004(只用其中一個 op-amp)\(+\) 74HC4051 8 通道類比 mux(只啟用 4 個通道)
+	\(+\) 4 檔 gain(\(R_f \in \{\SI{1}{\kilo\ohm}, \SI{10}{\kilo\ohm},
+	\SI{100}{\kilo\ohm}, \SI{1}{\mega\ohm}\}\))。\textbf{4 檔 \(R_f C_f\) 乘積
+		全部對齊成 \SI{10}{\micro\second}},使各檔截止頻率\textbf{一致}收斂到
+	\(f_c \approx \SI{16}{\kilo\hertz}\)。整套裝置的物料成本約\textbf{新台幣 435 元},
+	證明「自己動手做光學儀器」在大學專題層級是可行的。報告最後說明已送製、
+	仍在運送途中的 PCB 版規格升級路線:\textbf{OPA320 \(+\) TMUX1208 \(+\) 8 檔
+		\(R_f\) (\(\SI{10}{\ohm}\) 到 \(\SI{100}{\mega\ohm}\)) \(+\) SFH 2440
+		類人眼光譜光二極體 \(+\) 3D 列印整機外殼}。
 \end{abstract}
 
 % =====================================================================
-\section{前言:為什麼要量「看不見的閃」}
+\section{前言:為什麼要量「看不見的閃爍」}
 
-人眼對閃爍的敏感頻段約在 \(\SIrange{3}{60}{\hertz}\) 之間,但現代螢幕 / LED 燈具
-普遍以 \(\SI{100}{\hertz}\)(電源整流頻率 \(\times 2\))到 \(\SI{25}{\kilo\hertz}\)
-之間的 PWM 調光,看似「不會閃」其實仍有強度週期性變化\,\cite{IEEE1789}。
-這種\textbf{次感知頻段的閃爍}已被 IEEE Std 1789-2015 列為潛在的視覺疲勞、
-偏頭痛、誘發癲癇風險來源。flico 的目的就是\textbf{把人眼看不見的閃變成桌面 GUI
-上看得見的曲線}。
-
-設計目標:
-
-\begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item \textbf{頻寬至少 \SI{16}{\kilo\hertz}}:涵蓋 IEEE 1789 關注的 \(\leq\)
-        \SI{12.5}{\kilo\hertz} 範圍,並留一些 margin。
-  \item \textbf{動態範圍跨 4 個數量級的入射光強度}:從暗室到日光皆要量得到 \\
-        \(\to\) 用 \textbf{多檔 \(R_f\) 跨 \(10^3 \times\) 增益}解。
-  \item \textbf{單機可獨立顯示瞬時亮度},接上電腦才開 FFT 詳查 \\
-        \(\to\) 用 I\textsuperscript{2}C OLED 補上輕量化的「離線模式」。
-  \item \textbf{總材料費控制在新台幣 500 元以下},
-        當作大學專題層級的「\textbf{自製儀器}」demonstrator。
-\end{itemize}
+人眼對閃爍的敏感頻段約在 \(\SIrange{3}{60}{\hertz}\) 之間,但現代螢幕 / LED 燈具普遍以 \(\SI{100}{\hertz}\)(電源整流頻率 \(\times 2\))到 \(\SI{25}{\kilo\hertz}\)之間的 PWM 調光,看似「不會閃」其實仍有強度週期性變化\,\cite{IEEE1789}。這種\textbf{次感知頻段的閃爍}已被 IEEE Std 1789-2015 列為潛在的視覺疲勞、偏頭痛、誘發癲癇風險來源。flico 的目的就是\textbf{檢測人眼看不見的高頻閃爍訊號}。
+\newline
+\newline
+\noindent
+要偵測這些訊號，需要達到的規格，以及希望達成的目標有:
+\begin{table}[H]
+	\centering
+	\begin{tabular}{lll}
+		\toprule
+		              & 數值                       & 原因                                                 \\
+		\midrule
+		bandwidth     & \SI{16}{\kilo\hertz}     & 涵蓋 IEEE 1789 關注的 \(\leq\)\SI{12.5}{\kilo\hertz} 範圍 \\
+		Dynamic Range & 3 orders of magnitudes & 為了涵蓋更多的測試場景                                        \\
+		cost          & NT\$\,1000               & 太貴我會窮死                                             \\
+		\bottomrule
+	\end{tabular}
+\end{table}
 
 % =====================================================================
 \section{系統概觀}
+\label{sec:overview}
 
-訊號鏈如圖~\ref{fig:signal-chain} 所示,共 5 級:
-
-\begin{equation*}
-  \text{光} \;\to\; \text{BPW34 PD} \;\to\; \text{MCP6004 TIA} \;\to\;
-  \text{74HC4051 MUX} \;\to\; \text{Pico ADC \(+\) USB-CDC} \;\to\;
-  \text{Rust GUI \(/\) OLED}
-\end{equation*}
+flico 的訊號鏈由\textbf{類比前端 \(\to\) 微控制器 \(\to\) 雙頭顯示}三段串接而成,
+完整電路、控制線與資料流向見圖~\ref{fig:flico-block}(沿著圖中由左而右、再往下的順序讀)。
 
 \begin{figure}[H]
-  \centering
-  \includegraphics[width=0.85\linewidth]{initial_schmatic.jpg}
-  \caption{flico 初版手繪電路:BPW34 直接接 MCP6004 反相端,
-    回授支(\(R_f \parallel C_f\))由 74HC4051 8 通道 mux 選檔。本檔已實作為麵包板原型。}
-  \label{fig:signal-chain}
+	\centering
+	\includegraphics[width=\linewidth]{tia_mcp6004}
+	\caption{flico 完整訊號鏈:BPW34 接到 MCP6004 反相端、74HC4051 mux 在四檔
+		\(R_f \parallel C_f\) 間切換(由 Pico GP10/GP11 控制),
+		\(V_\text{out}\) 經 Pico GP26 (ADC0) 取樣後分兩路——
+		I\textsuperscript{2}C 餵 0.91 吋 OLED 即時顯示瞬時電壓、
+		USB-CDC 3-byte frame 串流到桌面端的 Rust GUI(\texttt{rust\_flico})做 FFT 視覺化。}
+	\label{fig:flico-block}
 \end{figure}
 
-每一級的選型與權衡列於表~\ref{tab:bom-current}。
+訊號流向依序為:
+
+\begin{enumerate}[leftmargin=2em,itemsep=2pt]
+	\item \textbf{光 \(\to\) 電流}:BPW34 cathode 被 op-amp 虛短拉到
+	      \(V_{+} = \frac{1.8\,\text{k}\Omega}{56\,\text{k}\Omega + 1.8\,\text{k}\Omega}
+	      \cdot 3.3\,\text{V} \approx \SI{0.1}{\volt}\),對 GND 端形成近乎零偏壓,
+	      入射光被轉成光電流 \(I_{pd}\)(零偏壓的好處見第~\ref{sec:circuit} 節)。
+	\item \textbf{電流 \(\to\) 電壓(4 檔可切換增益)}:\(I_{pd}\) 流過 74HC4051 選中的
+	      那一條 \(R_f \parallel C_f\),產生
+	      \(V_\text{out} = V_+ + I_{pd}\cdot R_f\)。四檔的 \(R_fC_f\) 乘積都刻意對齊到
+	      \SI{10}{\micro\second},截止頻率 \(f_c \approx \SI{16}{\kilo\hertz}\)
+	      跨檔一致(細節見第~\ref{sec:gain-table} 節)。
+	\item \textbf{ADC 取樣}:\(V_\text{out}\) 進 Pico 的 GP26 (ADC0),
+	      12-bit ADC 以 \SI{16}{\kilo\hertz} 鎖頻取樣,DMA 直推內部 FIFO,
+	      讓 ADC 採樣不被任何主迴圈工作打斷。
+	\item \textbf{雙頭輸出}:Pico 把資料同時送到兩處——
+	      \begin{itemize}[leftmargin=1.5em,itemsep=0pt]
+		      \item \textbf{本機 OLED}:GP4/GP5 走 I\textsuperscript{2}C
+		            \SI{400}{\kilo\hertz} 到 0.91 吋 SSD1306(\(128 \times 32\),
+		            畫面比例 4:1),顯示當前 gear 與瞬時電壓——不接電腦也能讀數。
+		      \item \textbf{USB-CDC \(\to\) 桌面}:每一樣本打成 3-byte binary frame
+		            \texttt{[0xA0\,|\,gear, ADC\_lo, ADC\_hi]},搭配 ASCII 標頭
+		            \texttt{\# MODE=MON} / \texttt{\# RATE=16000} / \texttt{\# GAP=N},
+		            串流到桌面端的 \texttt{rust\_flico} 做時域 \(+\) FFT 即時繪圖。
+	      \end{itemize}
+\end{enumerate}
+
+整個架構的關鍵設計都集中在「類比前端 \(+\) Pico」這兩段:選對 op-amp 拓樸、
+把 \(R_fC_f\) 對齊、讓韌體自動換檔——這些「巧思」在第~\ref{sec:circuit} 節展開。
+所有零件的選型理由列在表~\ref{tab:bom-current}。
 
 \begin{table}[H]
-  \centering
-  \caption{flico 麵包板版主要零件清單與選型理由。}
-  \label{tab:bom-current}
-  \small
-  \begin{tabular}{lll}
-    \toprule
-    元件        & 型號                       & 選型理由 \\
-    \midrule
-    光二極體    & Vishay \textbf{BPW34}      & 大面積(\SI{7.5}{\milli\meter\squared}),
-                                              敏感波段 \SIrange{430}{1100}{\nano\meter},
-                                              台灣容易買、便宜\,\cite{BPW34Datasheet} \\
-    跨阻放大器  & Microchip \textbf{MCP6004} & 單電源 3.3\,V 可跑、軌到軌輸出、
-                                              \SI{1}{\mega\hertz} GBW;
-                                              4 op-amp 但本版只用 1 個\,\cite{MCP6004Datasheet} \\
-    類比 MUX    & \textbf{74HC4051}          & 8 通道,3 條 select 線即可定址;
-                                              本版只用 4 通道\,\cite{HC4051Datasheet} \\
-    MCU         & \textbf{Raspberry Pi Pico} & 內含 12-bit ADC \(\times\) 3,
-                                              USB-CDC 直接出訊號,3.3\,V 邏輯\,\cite{PicoDatasheet} \\
-    顯示器      & 0.91" I\textsuperscript{2}C OLED & \(128 \times 32\) dot,
-                                                    SSD1306 控制器,
-                                                    Pico 端用 GP4/GP5 走 I\textsuperscript{2}C \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{flico 麵包板版主要零件清單與選型理由。}
+	\label{tab:bom-current}
+	\small
+	\begin{tabular}{lll}
+		\toprule
+		元件     & 型號                                                 & 選擇理由                                                                                                \\
+		\midrule
+		光二極體   & Vishay \textbf{BPW34} \cite{BPW34Datasheet}        & \makecell[l]{大面積 (\SI{7.5}{\milli\meter\squared}) \\ 敏感波段 \SIrange{430}{1100}{\nano\meter} \\ 便宜易買} \\
+		\midrule
+		跨阻放大器  & Microchip \textbf{MCP6004} \cite{MCP6004Datasheet} & \makecell[l]{使用 \SI{3.3}{\volt} 容易驅動 \\ \SI{1}{\mega\hertz} GBW \\ 易買}                              \\
+		\midrule
+		類比 MUX & \textbf{74HC4051} \cite{HC4051Datasheet}           & \makecell[l]{8 通道，3 條 select 線即可定址 \\ 本版只使用 4 通道}                                                   \\
+		\midrule
+		MCU    & \textbf{Raspberry Pi Pico} \cite{PicoDatasheet}    & \makecell[l]{內含 12-bit ADC \\ USB-CDC 直接輸出訊號 \\ \SI{3.3}{\volt} 電源方便類比元件使用}                         \\
+		\midrule
+		顯示器    & 0.91" I\textsuperscript{2}C OLED                   & \makecell[l]{$128 \times 32$ 點矩陣 \\ SSD1306 控制器 \\ Pico 端使用 GP4/GP5 走 I\textsuperscript{2}C 總線}     \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 % =====================================================================
 \section{電路設計(麵包板版)}
 \label{sec:circuit}
 
-\subsection{TIA 拓樸:讓光二極體跑在零偏壓}
+\subsection{TIA 拓樸:讓 BPW34 跑在零偏壓}
 
-BPW34 接在 MCP6004 的反相輸入端,正輸入端接 \(V_{cc}/2 = \SI{1.65}{\volt}\)
-(由 Pico 3.3\,V 經兩顆等值電阻分壓,再用 \SI{0.1}{\micro\farad} 旁路)。
-op-amp 的虛短特性讓 PD 兩端電壓近乎為零,\textbf{光電流 \(I_{pd}\)
-完全流過回授阻抗 \(Z_f = R_f \parallel C_f\)},輸出電壓:
+BPW34 作為矽 PIN 光二極體,有兩種典型工作模式可選。\textbf{逆偏壓}會把 PD
+的寄生電容 \(C_{pd}\) 壓小、把頻寬拉高,適合高速光通訊;但代價是\textbf{暗電
+	流會抬升約 3 個數量級},在弱光下直接污染訊號底。\textbf{零偏壓}則反過來——
+頻寬被 \(C_{pd}\) 限制,但暗電流壓到極低。
+
+flico 的量測對象是\textbf{深暗環境下的低頻 flicker}(典型情境:手機 OLED 在最低亮度
+下的 PWM),這種場景下決定 SNR 的瓶頸是\textbf{雜訊底而不是頻寬}。因此我們
+\textbf{刻意讓 BPW34 跑在零偏壓},把暗電流的優勢吃滿;\(C_{pd} \approx
+\SI{70}{\pico\farad}\) 帶來的穩定性問題另外用 \(C_f\) 補償(見下節)。
+
+要在電路上做出「BPW34 兩端電壓近乎為零」這個條件,最乾淨的手段就是
+\textbf{跨阻放大器(TIA)拓樸}。把 BPW34 接在 op-amp 的反相輸入端,
+正輸入端墊一個小電壓 \(V_{+}\),則由虛短特性,反相輸入端會被拉到同樣的
+\(V_{+}\)——於是 BPW34 兩端的電壓差近乎為零、滿足零偏壓條件。同時,
+PD 在這個工作點是\textbf{電流源}的角色,光電流 \(I_{pd}\) 不會流進 op-amp
+高阻抗的輸入腳,只能\textbf{完全流過回授阻抗 \(Z_f = R_f \parallel C_f\)},
+換成一個與光強成正比的輸出電壓:
 
 \begin{equation}
-  V_\text{out}(s) = V_{cc}/2 \;-\; I_{pd}(s) \cdot \frac{R_f}{1 + sR_fC_f}.
-  \label{eq:tia-tf}
+	V_\text{out}(s) = V_{+} \;-\; I_{pd}(s) \cdot \frac{R_f}{1 + sR_fC_f}.
+	\label{eq:tia-tf}
 \end{equation}
 
-零偏壓\((V_R \approx 0)\) 是\textbf{刻意選擇}:相較於逆偏(會壓低 PD 寄生電容、
-拉高頻寬),零偏壓的暗電流低 \(\sim 3\) 個數量級,在量\textbf{深暗環境下的低頻
-flicker}(例如手機 OLED 最低亮度 PWM)時 SNR 明顯較好。代價是 PD 寄生電容
-\(C_{pd} \approx \SI{70}{\pico\farad}\) 較大,需要在 \(C_f\) 上做穩定性補償
-(見下節)。
+至於 \(V_{+}\) 為什麼不直接接 0\,V、而是墊 \SI{0.1}{\volt}:flico 用單電源
+(3.3\,V)供 op-amp,輸出無法跨過 0\,V,若把工作點貼著 0\,V,最暗訊號會被
+op-amp 的非線性區與雜訊底截斷。墊 \SI{0.1}{\volt} 讓輸出有一點 headroom,
+保留小訊號的可量測性(細節見第~\ref{sec:gain-table} 節的自動換檔規則)。
+實作上 \(V_{+}\) 由 Pico 3.3\,V 軌經兩顆電阻分壓得來:
+\[
+	V_{+} = \frac{R_2}{R_1 + R_2}\times 3.3\,\text{V}
+	= \frac{1.8\,\text{k}\Omega}{56\,\text{k}\Omega + 1.8\,\text{k}\Omega}\times 3.3\,\text{V}
+	\approx \SI{0.1}{\volt},
+\]
+並用 \SI{0.1}{\micro\farad} 旁路電容抑制分壓節點上的高頻噪音。
 
 \subsection{巧思 1:4 檔 gain 共用同一截止頻率}
 \label{sec:gain-table}
 
 flico 麵包板版開了 4 檔 gain,涵蓋 \(10^3 \times\) 動態範圍。\textbf{關鍵的設計
-巧思在於:每一檔的 \(R_f \times C_f\) 乘積都刻意拼成 \SI{10}{\micro\second}},
+	巧思在於:每一檔的 \(R_f \times C_f\) 乘積都刻意拼成 \SI{10}{\micro\second}},
 讓\textbf{所有檔位共用同一個 \(\sim \SI{16}{\kilo\hertz}\) 截止頻率},
 換檔只是換增益、不換頻寬。
 
 代入 \(f_c = 1/(2\pi R_f C_f)\):
 
 \begin{equation}
-  R_f C_f = \frac{1}{2\pi f_c} = \frac{1}{2\pi \times \SI{16}{\kilo\hertz}}
-  = \SI{9.95}{\micro\second} \approx \SI{10}{\micro\second}.
-  \label{eq:rc-product}
+	R_f C_f = \frac{1}{2\pi f_c} = \frac{1}{2\pi \times \SI{16}{\kilo\hertz}}
+	= \SI{9.95}{\micro\second} \approx \SI{10}{\micro\second}.
+	\label{eq:rc-product}
 \end{equation}
 
 四檔配對如表~\ref{tab:gain-current}。
 
 \begin{table}[H]
-  \centering
-  \caption{麵包板版 4 檔 gain 配對。\(R_f C_f\) 全部等於 \SI{10}{\micro\second},
-    對應 \(f_c \approx \SI{16}{\kilo\hertz}\)。}
-  \label{tab:gain-current}
-  \begin{tabular}{cllll}
-    \toprule
-    通道 & \(R_f\)         & \(C_f\) (SMD 標印)    & 跨阻增益           & 適用入射光 \\
-    \midrule
-    0    & \SI{1}{\kilo\ohm}    & \SI{10}{\nano\farad} (\texttt{103})    & \(10^3\,\text{V/A}\) & 強光(室內 \(>\)\SI{1000}{lx}) \\
-    1    & \SI{10}{\kilo\ohm}   & \SI{1}{\nano\farad} (\texttt{102})     & \(10^4\,\text{V/A}\) & 中等光(辦公室常見) \\
-    2    & \SI{100}{\kilo\ohm}  & \SI{100}{\pico\farad} (\texttt{101})   & \(10^5\,\text{V/A}\) & 弱光(臥室夜間) \\
-    3    & \SI{1}{\mega\ohm}    & \SI{10}{\pico\farad} (\texttt{100})    & \(10^6\,\text{V/A}\) & 暗室 \(/\) 手機 OLED 最低亮度 PWM \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{麵包板版 4 檔 gain 配對。\(R_f C_f\) 全部等於 \SI{10}{\micro\second},
+		對應 \(f_c \approx \SI{16}{\kilo\hertz}\)。}
+	\label{tab:gain-current}
+	\begin{tabular}{cllll}
+		\toprule
+		通道 & \(R_f\)             & \(C_f\) (SMD 標印)                     & 跨阻增益                 & 適用入射光                     \\
+		\midrule
+		0  & \SI{1}{\kilo\ohm}   & \SI{10}{\nano\farad} (\texttt{103})  & \(10^3\,\text{V/A}\) & 強光(室內 \(>\)\SI{1000}{lx}) \\
+		1  & \SI{10}{\kilo\ohm}  & \SI{1}{\nano\farad} (\texttt{102})   & \(10^4\,\text{V/A}\) & 中等光(辦公室常見)                \\
+		2  & \SI{100}{\kilo\ohm} & \SI{100}{\pico\farad} (\texttt{101}) & \(10^5\,\text{V/A}\) & 弱光(臥室夜間)                  \\
+		3  & \SI{1}{\mega\ohm}   & \SI{10}{\pico\farad} (\texttt{100})  & \(10^6\,\text{V/A}\) & 暗室 \(/\) 手機 OLED 最低亮度 PWM \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 \textbf{為什麼這件事很重要?} 一般初學者的多檔 TIA 設計只切換 \(R_f\)、不動 \(C_f\),
 結果各檔截止頻率隨 \(R_f\) 變動 \(3\) 個數量級——換一次檔,頻譜的「可信範圍」
 就要跟著重畫,FFT 的 \(x\) 軸沒辦法跨檔比較。flico 把 \(C_f\) 也一起換進 mux,
 \textbf{付出的代價只是多 4 顆陶瓷電容(每顆 NT\$\,2)},得到的好處是\textbf{換檔
-不破壞頻譜量測的物理意義},FFT 圖在四檔之間可以直接疊上去比。
+	不破壞頻譜量測的物理意義},FFT 圖在四檔之間可以直接疊上去比。
 
-\subsection{巧思 2:用 mux 把波段開關吃掉}
+\subsection{巧思 2:讓韌體自動換檔——「電壓出線性區就跳檔」}
+為實現寬動態範圍的光訊號量測並提升操作便利性，本系統設計了一套自動增益換檔演算法，其核心原則為「輸出電壓脫離線性區即觸發跳檔」。
 
-回授支從 op-amp 的反相端拉出來,接到 \textbf{74HC4051 的 common 腳(\texttt{COM})},
-4 條通道(\texttt{Y0}\(\sim\)\texttt{Y3})各接一組 \(R_f \parallel C_f\)\(\to\)
-共同接回 op-amp 輸出。Pico 用 GP10/GP11/GP12 三條腳當 mux select 線(本版
-最高位 \texttt{S2} 永遠拉低,因為只用 4 通道),按一下實體按鍵就升一檔、降一檔。
+首先，在硬體架構上，轉阻放大器（TIA）採用 $V_{\text{CC}} = 3.3\text{ V}$ 單電源供電。為避免光電二極體在零偏壓（$0\text{ V}$）附近因非線性響應或雜訊基底（Noise Floor）導致微弱訊號被截斷，系統引入了 $V_{+} = 0.1\text{ V}$ 的偏置電壓。因此，TIA 的有效輸出電壓範圍限制在 $0.1\text{ V} \le V_{\text{out}} \le 3.3\text{ V}$ 之間。
 
-\textbf{設計上的細節}:
+在自動換檔規則的設計上，由於相鄰檔位之間的增益倍率（Gain Ratio）設計為 $10$ 倍，因此當前檔位的 $0.3\text{ V}$ 訊號在切換至高增益檔位時，將精準對應至 $3.0\text{ V}$。基於此比例關係，Pico 微控制器以兩組電壓區間作為換檔決策依據：
+\begin{itemize}
+	\item \textbf{降檔觸發（環境過暗）：} 當 $0.1\text{ V} \le V_{\text{out}} < 0.3\text{ V}$ 時，代表當前檔位之增益不足，系統自動切換至更高增益的檔位以提升解析度。
+	\item \textbf{升檔觸發（光強過飽和）：} 當 $3.0\text{ V} < V_{\text{out}} \le 3.3\text{ V}$ 時，代表輸入光強過大且接近 TIA 飽和區，系統自動切換至較低增益的檔位以擴展量測上限。
+\end{itemize}
+透過此韌體主動回授機制，系統可在無需人工干預的情況下，動態維持在最佳信噪比（SNR）的工作區間。
+
+\textbf{其他設計上的細節}:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item 74HC4051 的 \(R_\text{on} \approx \SI{70}{\ohm}\) 跟最小檔 \(R_f =
-        \SI{1}{\kilo\ohm}\) 是 \(7\%\) 誤差,\textbf{會直接污染最大電流檔的增益讀數};
-        本版選擇\textbf{接受並在韌體端做查表校正},未來 PCB 版會換成
-        \(R_\text{on} \approx \SI{5}{\ohm}\) 的 TMUX1208PW(\(0.5\%\) 誤差)。
-  \item mux 切換瞬間會有 \(\sim \SI{100}{\nano\second}\) 的 break-before-make
-        死區,輸出會跳一下;韌體在切檔後\textbf{丟掉前 5 個 ADC 樣本}避開突波。
+	\item 74HC4051 的 \(R_\text{on} \approx \SI{70}{\ohm}\) 跟最小檔 \(R_f =
+	      \SI{1}{\kilo\ohm}\) 是 \(7\%\) 誤差,\textbf{會直接污染最大電流檔的增益讀數};
+	      韌體在 \texttt{GEARS} 表裡用 \texttt{effective\_r = R\_f + 100} 做查表
+	      校正。未來 PCB 版會換成 \(R_\text{on} \approx \SI{5}{\ohm}\) 的
+	      TMUX1208PW(\(0.5\%\) 誤差),屆時就不需要校正。
+	\item mux 切換瞬間會有 \(\sim \SI{100}{\nano\second}\) 的 break-before-make
+	      死區,輸出會跳一下;韌體切檔後等 \SI{50}{\milli\second} cooldown,
+	      並在串流上打一個 \texttt{\# GAP=N} 標記,host 端 Rust GUI 看到 GAP
+	      就在 FFT 視窗把這段丟掉。
+	\item 在實務上，如果恰好切在0.3V或3.0V邊界,會來回跳檔;韌體實作了\textbf{0.1V的死區},避免頻繁切換。因此實際向下切換的檔是0.2V
 \end{itemize}
 
 \subsection{電源 \(+\) 麵包板實作}
@@ -258,13 +317,13 @@ flico 麵包板版開了 4 檔 gain,涵蓋 \(10^3 \times\) 動態範圍。\textb
 完整訊號鏈展示。
 
 \begin{figure}[H]
-  \centering
-  \subfloat[BPW34 焊上排針的近照(5/12)]{%
-    \includegraphics[height=4.5cm]{BPW34_solder.JPG}}\hfill
-  \subfloat[最終定稿的麵包板電路圖手繪(5/12)]{%
-    \includegraphics[height=4.5cm]{final_schmatic.JPG}}
-  \caption{麵包板版實體與電路手稿。}
-  \label{fig:breadboard}
+	\centering
+	\subfloat[BPW34 焊上排針的近照(5/12)]{%
+		\includegraphics[height=4.5cm]{BPW34_solder.JPG}}\hfill
+	\subfloat[最終定稿的麵包板電路圖手繪(5/12)]{%
+		\includegraphics[height=4.5cm]{final_schmatic.JPG}}
+	\caption{麵包板版實體與電路手稿。}
+	\label{fig:breadboard}
 \end{figure}
 
 % =====================================================================
@@ -276,16 +335,16 @@ flico 麵包板版開了 4 檔 gain,涵蓋 \(10^3 \times\) 動態範圍。\textb
 因為 edit \(\to\) save \(\to\) run 的循環只要 1 秒,原型迭代最快。但測完發現:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item MicroPython 的 \texttt{adc.read\_u16()} 是純解譯式呼叫,單樣本要 \(\sim
-        \SI{40}{\micro\second}\)。\textbf{採樣率被卡在 \SI{25}{\kilo\hertz}},
-        剛好不能可靠抓到 \SI{16}{\kilo\hertz} 的訊號(Nyquist 要 \(2 \times\) 還
-        要留 margin)。
-  \item I\textsuperscript{2}C OLED 更新一個 frame 要 \(\sim \SI{30}{\milli\second}\),
-        在這個 \(30\,\text{ms}\) 區間 ADC 採樣會\textbf{完全暫停},時域曲線會出現
-        週期性的「\textbf{破洞}」。
+	\item MicroPython 的 \texttt{adc.read\_u16()} 是純解譯式呼叫,單樣本要 \(\sim
+	      \SI{40}{\micro\second}\)。\textbf{採樣率被卡在 \SI{25}{\kilo\hertz}},
+	      剛好不能可靠抓到 \SI{16}{\kilo\hertz} 的訊號(Nyquist 要 \(2 \times\) 還
+	      要留 margin)。
+	\item I\textsuperscript{2}C OLED 更新一個 frame 要 \(\sim \SI{30}{\milli\second}\),
+	      在這個 \(30\,\text{ms}\) 區間 ADC 採樣會\textbf{完全暫停},時域曲線會出現
+	      週期性的「\textbf{破洞}」。
 \end{itemize}
 
-5/12 整天 fork 出 \textbf{C++ Pico SDK} 版,直接呼叫 RP2040 的 ADC 硬體:
+5/12 我實作出 \textbf{C++ Pico SDK} 版,直接呼叫 RP2040 的 ADC 硬體:
 \texttt{adc\_select\_input(0); adc\_read();} 單樣本 \(\sim \SI{2}{\micro\second}\),
 採樣率輕鬆拉到 \SI{500}{\kilo\hertz}(實際本版設 \SI{50}{\kilo\hertz} 留 margin)。
 OLED 更新改放在獨立的 timer ISR、每 \SI{200}{\milli\second} 刷一次,跟 ADC 採樣
@@ -296,18 +355,18 @@ OLED 更新改放在獨立的 timer ISR、每 \SI{200}{\milli\second} 刷一次,
 \texttt{firmware/cpp-version/} 的核心檔案:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item \texttt{main.cpp}:設定 ADC 通道 0(GP26)\(+\) USB-CDC 出口,
-        進入 \texttt{while(true)} 主迴圈:
-        \begin{enumerate}[leftmargin=2em,itemsep=0pt]
-          \item 從 ADC 拉 1 樣本(\SI{12}{bit})
-          \item 透過 \texttt{stdio\_usb} 推 3 byte binary frame
-                (\texttt{[sync\_byte, high\_8bit, low\_4bit]})到 USB-CDC
-          \item 檢查按鍵狀態 \(\to\) 必要時切 mux select 線
-        \end{enumerate}
-  \item \texttt{ssd1306.cpp / .hpp}:從 Pico SDK 範例改寫的純 C++ 驅動,
-        實作 \texttt{init()}, \texttt{clear()}, \texttt{draw\_text()},
-        \texttt{flush()}。一個 frame buffer 是 \(128 \times 32 / 8 = 512\) byte,
-        I\textsuperscript{2}C 速率 \SI{400}{\kilo\hertz}。
+	\item \texttt{main.cpp}:設定 ADC 通道 0(GP26)\(+\) USB-CDC 出口,
+	      進入 \texttt{while(true)} 主迴圈:
+	      \begin{enumerate}[leftmargin=2em,itemsep=0pt]
+		      \item 從 ADC 拉 1 樣本(\SI{12}{bit})
+		      \item 透過 \texttt{stdio\_usb} 推 3 byte binary frame
+		            (\texttt{[sync\_byte, high\_8bit, low\_4bit]})到 USB-CDC
+		      \item 檢查按鍵狀態 \(\to\) 必要時切 mux select 線
+	      \end{enumerate}
+	\item \texttt{ssd1306.cpp / .hpp}:從 Pico SDK 範例改寫的純 C++ 驅動,
+	      實作 \texttt{init()}, \texttt{clear()}, \texttt{draw\_text()},
+	      \texttt{flush()}。一個 frame buffer 是 \(128 \times 32 / 8 = 512\) byte,
+	      I\textsuperscript{2}C 速率 \SI{400}{\kilo\hertz}。
 \end{itemize}
 
 \textbf{巧思}:3-byte binary frame 比 ASCII CSV 省 \(\sim 4 \times\) 頻寬,
@@ -327,51 +386,51 @@ crate 名 \texttt{rust\_flico},放在 \texttt{host/}。完整原始碼只有
 \textbf{兩階段失敗}:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item \textbf{matplotlib \(+\) \texttt{plt.ion()}}:macOS retina backend
-        每次 redraw 整個 figure,在 \SI{60}{\hertz} 同步翻轉下\textbf{會閃},
-        且 \(> 10^4\) 樣本 fps 掉到 \(\sim 8\)。
-  \item \textbf{PyQtGraph (OpenGL backend)}:解掉閃但 \(> 3 \times 10^4\) 樣本
-        fps 掉到 \(\sim 0.5\),根本原因是 NumPy \(\leftrightarrow\) Qt scene graph 的
-        memcpy \(+\) Python GIL 跟 serial reader thread 互搶。
+	\item \textbf{matplotlib \(+\) \texttt{plt.ion()}}:macOS retina backend
+	      每次 redraw 整個 figure,在 \SI{60}{\hertz} 同步翻轉下\textbf{會閃},
+	      且 \(> 10^4\) 樣本 fps 掉到 \(\sim 8\)。
+	\item \textbf{PyQtGraph (OpenGL backend)}:解掉閃但 \(> 3 \times 10^4\) 樣本
+	      fps 掉到 \(\sim 0.5\),根本原因是 NumPy \(\leftrightarrow\) Qt scene graph 的
+	      memcpy \(+\) Python GIL 跟 serial reader thread 互搶。
 \end{itemize}
 
 換 Rust 之後\textbf{單槍突破}:eframe 是 immediate-mode GUI,
 \texttt{\&[f32]} 直推 GPU vertex buffer,沒有 retained scene graph 要維護;
 序列讀取走 \texttt{std::thread} \(+\) \texttt{crossbeam-channel},\textbf{沒有 GIL}。
 
-效能比較如表~\ref{tab:fps}(同一台 M1 Air,同樣的訊號)。
+效能比較如表~\ref{tab:fps}(同一台 intel 2019 的 Macbook Pro,同樣的訊號)。
 
 \begin{table}[H]
-  \centering
-  \caption{host 端三種繪圖技術在不同累積樣本數下的 fps 比較。}
-  \label{tab:fps}
-  \begin{tabular}{lrrr}
-    \toprule
-    累積樣本數                & matplotlib & PyQtGraph                & Rust (egui\_plot) \\
-    \midrule
-    \(10^3\)                  & 20         & 60                       & 60(V-sync 上限) \\
-    \(10^4\)                  & 8          & 60                       & 60 \\
-    \(3 \times 10^4\)         & 3          & 0.5                      & 60 \\
-    \(10^5\)                  & 1          & 卡死                     & 40 \\
-    \(3 \times 10^5\)         & 卡死        & 卡死                     & 30 \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{host 端三種繪圖技術在不同累積樣本數下的 fps 比較。}
+	\label{tab:fps}
+	\begin{tabular}{lrrr}
+		\toprule
+		累積樣本數             & matplotlib & PyQtGraph & Rust (egui\_plot) \\
+		\midrule
+		\(10^3\)          & 20         & 60        & 60(V-sync 上限)     \\
+		\(10^4\)          & 8          & 60        & 60                \\
+		\(3 \times 10^4\) & 3          & 0.5       & 60                \\
+		\(10^5\)          & 1          & 卡死        & 40                \\
+		\(3 \times 10^5\) & 卡死         & 卡死        & 30                \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 \subsection{GUI 主要功能}
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item \textbf{時域 \(\leftrightarrow\) FFT 連動 zoom}:時域圖的 \(x\) 軸視窗
-        改變時自動送新的 \texttt{FftJob}, FFT panel 顯示\textbf{該視窗區間的頻譜},
-        而不是整段累積資料的頻譜。
-  \item \textbf{Auto-detect Pico port}:macOS 掃 \texttt{/dev/cu.usbmodem*},
-        Windows 預設 \texttt{COM3}。
-  \item \textbf{CSV export}:\texttt{flicker\_<unix\_ts>.csv} 一鍵存,做後續分析。
-  \item \textbf{Synth mode}:\texttt{--synth} flag 跑合成 sinusoid \(+\) noise,
-        demo 時不用接實體 Pico。
-  \item \textbf{WASM target}:\texttt{cargo build --target wasm32-unknown-unknown}
-        產出 \(\sim \SI{8}{MB}\) \texttt{.wasm},可直接丟瀏覽器展示
-        (sample source 限定 synth)。
+	\item \textbf{時域 \(\leftrightarrow\) FFT 連動 zoom}:時域圖的 \(x\) 軸視窗
+	      改變時自動送新的 \texttt{FftJob}, FFT panel 顯示\textbf{該視窗區間的頻譜},
+	      而不是整段累積資料的頻譜。
+	\item \textbf{Auto-detect Pico port}:macOS 掃 \texttt{/dev/cu.usbmodem*},
+	      Windows 預設 \texttt{COM3}。
+	\item \textbf{CSV export}:\texttt{flicker\_<unix\_ts>.csv} 一鍵存,做後續分析。
+	\item \textbf{Synth mode}:\texttt{--synth} flag 跑合成 sinusoid \(+\) noise,
+	      demo 時不用接實體 Pico。
+	\item \textbf{WASM target}:\texttt{cargo build --target wasm32-unknown-unknown}
+	      產出 \(\sim \SI{8}{MB}\) \texttt{.wasm},可直接丟瀏覽器展示
+	      (sample source 限定 synth)。
 \end{itemize}
 
 % =====================================================================
@@ -381,16 +440,16 @@ crate 名 \texttt{rust\_flico},放在 \texttt{host/}。完整原始碼只有
 \(+\) transient,確認電路在四檔下都穩定。模擬與量測結果如圖~\ref{fig:sim-meas}。
 
 \begin{figure}[H]
-  \centering
-  \subfloat[DC sweep:不同 \(R_f\) 下 \(I_{pd} \to V_\text{out}\) 線性度]{%
-    \includegraphics[width=0.31\linewidth]{tia_sweep.png}}\hfill
-  \subfloat[AC Bode:四檔截止頻率\textbf{重合}於 \(\sim \SI{16}{\kilo\hertz}\)]{%
-    \includegraphics[width=0.31\linewidth]{ac_bode.png}}\hfill
-  \subfloat[Transient:對 \SI{20}{\kilo\hertz} PWM 的響應]{%
-    \includegraphics[width=0.31\linewidth]{transient_pwm.png}}
-  \caption{PySpice 模擬結果。AC Bode 圖中四條曲線在 high-frequency 段
-    \textbf{完全重合}——這是 \(R_f C_f\) 對齊設計的視覺證據。}
-  \label{fig:sim-meas}
+	\centering
+	\subfloat[DC sweep:不同 \(R_f\) 下 \(I_{pd} \to V_\text{out}\) 線性度]{%
+		\includegraphics[width=0.31\linewidth]{tia_sweep.png}}\hfill
+	\subfloat[AC Bode:四檔截止頻率\textbf{重合}於 \(\sim \SI{16}{\kilo\hertz}\)]{%
+		\includegraphics[width=0.31\linewidth]{ac_bode.png}}\hfill
+	\subfloat[Transient:對 \SI{20}{\kilo\hertz} PWM 的響應]{%
+		\includegraphics[width=0.31\linewidth]{transient_pwm.png}}
+	\caption{PySpice 模擬結果。AC Bode 圖中四條曲線在 high-frequency 段
+		\textbf{完全重合}——這是 \(R_f C_f\) 對齊設計的視覺證據。}
+	\label{fig:sim-meas}
 \end{figure}
 
 \textbf{方法論巧思:實測噪音 \(\to\) PWL \(\to\) Spice}。
@@ -407,34 +466,34 @@ spice 工作簿,讓\textbf{模擬的雜訊背景跟實體電路一致},而不是
 表~\ref{tab:cost} 列出麵包板原型的零售價(2026 年 5 月台北光華電子實際採購)。
 
 \begin{table}[H]
-  \centering
-  \caption{flico 麵包板版材料成本(新台幣)。}
-  \label{tab:cost}
-  \begin{tabular}{llrr}
-    \toprule
-    類別       & 項目                                  & 數量 & 小計 (NT\$) \\
-    \midrule
-    主動元件   & BPW34 光二極體                        & 1    & 25  \\
-               & MCP6004 4 op-amp(只用 1)             & 1    & 30  \\
-               & 74HC4051 8 通道 mux                   & 1    & 10  \\
-               & Raspberry Pi Pico                     & 1    & 190 \\
-    顯示       & 0.91" I\textsuperscript{2}C OLED (\(128 \times 32\))     & 1    & 80  \\
-    被動元件   & 1/4\,W 電阻 (\SI{1}{\kilo\ohm} \(\sim\) \SI{1}{\mega\ohm}) & 4 & 4 \\
-               & 陶瓷電容 (\SI{10}{\pico\farad} \(\sim\) \SI{10}{\nano\farad}) & 4 & 8 \\
-               & \SI{10}{\micro\farad} 鉭電容(電源旁路) & 1    & 4   \\
-               & 分壓電阻 \(\times\) 2 \(+\) \SI{0.1}{\micro\farad} 旁路   & 1 \text{組}    & 6 \\
-    機構       & 半號麵包板                            & 1    & 50  \\
-               & 跳線 \(+\) 公-母排針                  & 1 \text{組}    & 30  \\
-    周邊       & USB Type-C 線(macOS 端)             & 1    & 0(自備) \\
-    \midrule
-    \multicolumn{3}{l}{\textbf{總計}}                                       & \textbf{435} \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{flico 麵包板版材料成本(新台幣)。}
+	\label{tab:cost}
+	\begin{tabular}{llrr}
+		\toprule
+		類別                              & 項目                                                        & 數量         & 小計 (NT\$) \\
+		\midrule
+		主動元件                            & BPW34 光二極體                                                & 1          & 25        \\
+		                                & MCP6004 4 op-amp(只用 1)                                    & 1          & 30        \\
+		                                & 74HC4051 8 通道 mux                                         & 1          & 10        \\
+		                                & Raspberry Pi Pico                                         & 1          & 190       \\
+		顯示                              & 0.91" I\textsuperscript{2}C OLED (\(128 \times 32\))      & 1          & 80        \\
+		被動元件                            & 1/4\,W 電阻 (\SI{1}{\kilo\ohm} \(\sim\) \SI{1}{\mega\ohm})  & 4          & 4         \\
+		                                & 陶瓷電容 (\SI{10}{\pico\farad} \(\sim\) \SI{10}{\nano\farad}) & 4          & 8         \\
+		                                & \SI{10}{\micro\farad} 鉭電容(電源旁路)                           & 1          & 4         \\
+		                                & 分壓電阻 \(\times\) 2 \(+\) \SI{0.1}{\micro\farad} 旁路         & 1 \text{組} & 6         \\
+		機構                              & 半號麵包板                                                     & 1          & 50        \\
+		                                & 跳線 \(+\) 公-母排針                                            & 1 \text{組} & 30        \\
+		周邊                              & USB Type-C 線(macOS 端)                                     & 1          & 0(自備)     \\
+		\midrule
+		\multicolumn{3}{l}{\textbf{總計}} & \textbf{435}                                                                       \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 對照市售 PWM 閃爍量測儀\(\sim \) NT\$\,5\,000\(\sim 30\,000\) 之間,
 \textbf{本專案以 \(\sim 1/10\) 不到的成本做到了 \(\sim 16\) kHz 頻寬與
-\(10^3 \times\) 動態範圍}。
+	\(10^3 \times\) 動態範圍}。
 
 % =====================================================================
 \section{未來展望:PCB 版的規格升級路線}
@@ -446,24 +505,24 @@ JLCPCB 製版包已於 2026/5/25 21:23 送出,以下是 PCB 版(\texttt{hardware
 \subsection{IC 升級}
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item \textbf{MCP6004 \(\to\) OPA320AIDBVR}\,\cite{OPA320Datasheet}:
-        \begin{itemize}[leftmargin=1em,itemsep=0pt]
-          \item GBW \SI{1}{\mega\hertz} \(\to\) \textbf{\SI{20}{\mega\hertz}}:
-                解放 \(R_f = \SI{100}{\mega\ohm}\) 那檔的頻寬上限。
-          \item 輸入偏壓電流 \SI{1}{\pico\ampere} \(\to\) \textbf{\SI{0.9}{\pico\ampere}}:
-                在最大 \(R_f\) 檔下,輸入偏壓貢獻的 DC 偏移從 \(\sim \SI{1}{\milli\volt}\)
-                降到 \(\sim \SI{90}{\micro\volt}\)。
-          \item 輸入電壓噪音 \(\SI{12}{\nano\volt/\sqrt{Hz}} \to \SI{7}{\nano\volt/\sqrt{Hz}}\)。
-        \end{itemize}
-  \item \textbf{74HC4051 \(\to\) TMUX1208PW}\,\cite{TMUX1208Datasheet}:
-        \(R_\text{on}\) 從 \(\sim \SI{70}{\ohm}\) 降到 \(\sim \SI{5}{\ohm}\),
-        \textbf{增益誤差從 \(7\%\) 降到 \(0.5\%\)},不用再做查表校正。
-        正好也是 8 通道,腳位 drop-in 替換(只差封裝是 TSSOP-16)。
-  \item \textbf{BPW34 \(\to\) OSRAM SFH 2440}\,\cite{SFH2440Datasheet}:
-        SFH 2440 的光譜響應內建\textbf{類人眼匹配濾光片}(peak \(\sim\)
-        \SI{570}{\nano\meter},BPW34 的紅外尾巴被砍掉)。
-        flicker 是「\textbf{人眼可感的閃爍}」,用類人眼光譜 PD 量到的數值
-        \textbf{對視覺疲勞研究的可比性更高}。
+	\item \textbf{MCP6004 \(\to\) OPA320AIDBVR}\,\cite{OPA320Datasheet}:
+	      \begin{itemize}[leftmargin=1em,itemsep=0pt]
+		      \item GBW \SI{1}{\mega\hertz} \(\to\) \textbf{\SI{20}{\mega\hertz}}:
+		            解放 \(R_f = \SI{100}{\mega\ohm}\) 那檔的頻寬上限。
+		      \item 輸入偏壓電流 \SI{1}{\pico\ampere} \(\to\) \textbf{\SI{0.9}{\pico\ampere}}:
+		            在最大 \(R_f\) 檔下,輸入偏壓貢獻的 DC 偏移從 \(\sim \SI{1}{\milli\volt}\)
+		            降到 \(\sim \SI{90}{\micro\volt}\)。
+		      \item 輸入電壓噪音 \(\SI{12}{\nano\volt/\sqrt{Hz}} \to \SI{7}{\nano\volt/\sqrt{Hz}}\)。
+	      \end{itemize}
+	\item \textbf{74HC4051 \(\to\) TMUX1208PW}\,\cite{TMUX1208Datasheet}:
+	      \(R_\text{on}\) 從 \(\sim \SI{70}{\ohm}\) 降到 \(\sim \SI{5}{\ohm}\),
+	      \textbf{增益誤差從 \(7\%\) 降到 \(0.5\%\)},不用再做查表校正。
+	      正好也是 8 通道,腳位 drop-in 替換(只差封裝是 TSSOP-16)。
+	\item \textbf{BPW34 \(\to\) OSRAM SFH 2440}\,\cite{SFH2440Datasheet}:
+	      SFH 2440 的光譜響應內建\textbf{類人眼匹配濾光片}(peak \(\sim\)
+	      \SI{570}{\nano\meter},BPW34 的紅外尾巴被砍掉)。
+	      flicker 是「\textbf{人眼可感的閃爍}」,用類人眼光譜 PD 量到的數值
+	      \textbf{對視覺疲勞研究的可比性更高}。
 \end{itemize}
 
 \subsection{巧思 1 的擴展:8 檔 gain,全部 \(f_c = \SI{16}{\kilo\hertz}\)}
@@ -474,34 +533,34 @@ PCB 版把 mux 從 4 通道用滿到 \textbf{8 通道},\(R_f\) 跨越 \textbf{8 
 \(C_f\) 跨 7 個數量級。
 
 \begin{table}[H]
-  \centering
-  \caption{PCB 版 8 檔 gain 配對。所有 \(R_f C_f = \SI{10}{\micro\second}\)。}
-  \label{tab:gain-future}
-  \begin{tabular}{clll}
-    \toprule
-    通道 & \(R_f\)            & \(C_f\)(理論值)               & 實作備註 \\
-    \midrule
-    0 & \SI{10}{\ohm}         & \SI{1}{\micro\farad}            & C0G/NP0 不可得,用 X7R \(+\) DC bias derating \\
-    1 & \SI{100}{\ohm}        & \SI{100}{\nano\farad}           & X7R 0805 \\
-    2 & \SI{1}{\kilo\ohm}     & \SI{10}{\nano\farad}            & C0G/NP0 0805 \\
-    3 & \SI{10}{\kilo\ohm}    & \SI{1}{\nano\farad}             & C0G/NP0 0603 \\
-    4 & \SI{100}{\kilo\ohm}   & \SI{100}{\pico\farad}           & C0G/NP0 0603 \\
-    5 & \SI{1}{\mega\ohm}     & \SI{10}{\pico\farad}            & C0G/NP0 0402 \\
-    6 & \SI{10}{\mega\ohm}    & \SI{1}{\pico\farad}             & 接近 layout 寄生電容,須拉短走線 \\
-    7 & \SI{100}{\mega\ohm}   & \SI{0.1}{\pico\farad}           & lumped 電容已不可行,\textbf{靠 PCB 寄生} \\
-    \bottomrule
-  \end{tabular}
+	\centering
+	\caption{PCB 版 8 檔 gain 配對。所有 \(R_f C_f = \SI{10}{\micro\second}\)。}
+	\label{tab:gain-future}
+	\begin{tabular}{clll}
+		\toprule
+		通道 & \(R_f\)             & \(C_f\)(理論值)          & 實作備註                                     \\
+		\midrule
+		0  & \SI{10}{\ohm}       & \SI{1}{\micro\farad}  & C0G/NP0 不可得,用 X7R \(+\) DC bias derating \\
+		1  & \SI{100}{\ohm}      & \SI{100}{\nano\farad} & X7R 0805                                 \\
+		2  & \SI{1}{\kilo\ohm}   & \SI{10}{\nano\farad}  & C0G/NP0 0805                             \\
+		3  & \SI{10}{\kilo\ohm}  & \SI{1}{\nano\farad}   & C0G/NP0 0603                             \\
+		4  & \SI{100}{\kilo\ohm} & \SI{100}{\pico\farad} & C0G/NP0 0603                             \\
+		5  & \SI{1}{\mega\ohm}   & \SI{10}{\pico\farad}  & C0G/NP0 0402                             \\
+		6  & \SI{10}{\mega\ohm}  & \SI{1}{\pico\farad}   & 接近 layout 寄生電容,須拉短走線                     \\
+		7  & \SI{100}{\mega\ohm} & \SI{0.1}{\pico\farad} & lumped 電容已不可行,\textbf{靠 PCB 寄生}          \\
+		\bottomrule
+	\end{tabular}
 \end{table}
 
 \textbf{兩個工程現實}:
 
 \begin{enumerate}[leftmargin=2em,itemsep=0pt]
-  \item 通道 6, 7 的 \(C_f\) 小到\textbf{比 PCB 走線寄生電容還小},lumped 電容
-        放上去也沒意義;實作上靠 \textbf{layout 寄生電容自然填上},並在 spice 模型
-        裡用「extracted parasitic + intentional 0\,pF placeholder」描述。
-  \item 通道 0 的 \(C_f = \SI{1}{\micro\farad}\) 用 X7R 會因 DC bias 縮容
-        \(\sim 30\%\),需要 derate;若空間允許可以改用兩顆 \SI{470}{\nano\farad}
-        並聯。
+	\item 通道 6, 7 的 \(C_f\) 小到\textbf{比 PCB 走線寄生電容還小},lumped 電容
+	      放上去也沒意義;實作上靠 \textbf{layout 寄生電容自然填上},並在 spice 模型
+	      裡用「extracted parasitic + intentional 0\,pF placeholder」描述。
+	\item 通道 0 的 \(C_f = \SI{1}{\micro\farad}\) 用 X7R 會因 DC bias 縮容
+	      \(\sim 30\%\),需要 derate;若空間允許可以改用兩顆 \SI{470}{\nano\farad}
+	      並聯。
 \end{enumerate}
 
 8 檔涵蓋了從\textbf{直視太陽}(\(I_{pd} \sim \SI{1}{\milli\ampere}\),
@@ -516,13 +575,13 @@ mechanical/ 目錄已用 Fusion 360 Python API 起手了一支
 photodiode fixture。下階段升級到「\textbf{整機 enclosure}」,目標規格:
 
 \begin{itemize}[leftmargin=2em,itemsep=0pt]
-  \item 外觀 \(\sim 60 \times 30 \times \SI{20}{\milli\meter}\),手持單手可握。
-  \item 前面板開 SFH 2440 對應的 \(\varnothing\,\SI{2.5}{\milli\meter}\) 光圈,
-        後方留 \(\sim \SI{3}{\milli\meter}\) 深的\textbf{遮光錐}(限制視場角到
-        \(\sim \pm 15^\circ\),避免邊光干擾)。
-  \item 側面 USB-C 開孔對齊 Pico,後面板 OLED 視窗。
-  \item PLA 列印,壁厚 \(\SI{1.6}{\milli\meter}\),底部留 \(M2 \times 4\) 螺絲孔
-        固定 PCB。
+	\item 外觀 \(\sim 60 \times 30 \times \SI{20}{\milli\meter}\),手持單手可握。
+	\item 前面板開 SFH 2440 對應的 \(\varnothing\,\SI{2.5}{\milli\meter}\) 光圈,
+	      後方留 \(\sim \SI{3}{\milli\meter}\) 深的\textbf{遮光錐}(限制視場角到
+	      \(\sim \pm 15^\circ\),避免邊光干擾)。
+	\item 側面 USB-C 開孔對齊 Pico,後面板 OLED 視窗。
+	\item PLA 列印,壁厚 \(\SI{1.6}{\milli\meter}\),底部留 \(M2 \times 4\) 螺絲孔
+	      固定 PCB。
 \end{itemize}
 
 外殼搭配 SFH 2440 的\textbf{光譜匹配 \(+\) 視場限制},把 flico 從「桌面實驗器材」
@@ -536,17 +595,17 @@ flico 用\textbf{ \(\sim \) NT\$\,435 的麵包板原型}證明了:大學生在�
 儀。本版的兩個關鍵設計巧思:
 
 \begin{enumerate}[leftmargin=2em,itemsep=0pt]
-  \item \textbf{4 檔 \(R_f C_f\) 對齊}\(\to\) 共用 \(f_c \approx \SI{16}{\kilo\hertz}\)
-        \(\to\) FFT 可跨檔疊比,而不是換一次檔就要換一張頻譜的「可信範圍」。
-  \item \textbf{韌體 \(+\) GUI 全換成編譯語言}(C++ Pico SDK \(+\) Rust eframe)
-        \(\to\) 解放 \SI{50}{\kilo\hertz} 採樣率 \(+\) \(3 \times 10^5\) 樣本下
-        仍維持 30 fps 即時繪圖。
+	\item \textbf{4 檔 \(R_f C_f\) 對齊}\(\to\) 共用 \(f_c \approx \SI{16}{\kilo\hertz}\)
+	      \(\to\) FFT 可跨檔疊比,而不是換一次檔就要換一張頻譜的「可信範圍」。
+	\item \textbf{韌體 \(+\) GUI 全換成編譯語言}(C++ Pico SDK \(+\) Rust eframe)
+	      \(\to\) 解放 \SI{50}{\kilo\hertz} 採樣率 \(+\) \(3 \times 10^5\) 樣本下
+	      仍維持 30 fps 即時繪圖。
 \end{enumerate}
 
 已送 JLCPCB 製版的 PCB 版(\texttt{hardware/final-version/SOC\_Final})
 延續同一套巧思,把通道從 4 擴到 8、IC 升級到 OPA320 \(+\) TMUX1208、
 光二極體換成類人眼光譜的 SFH 2440,並搭配 compact 3D 列印外殼。\textbf{PCB
-到貨後,將補上「實體 vs 麵包板」的對照量測作為本專案的續篇}。
+	到貨後,將補上「實體 vs 麵包板」的對照量測作為本專案的續篇}。
 
 整套設計都歸檔在 \href{https://github.com/}{flico} repo 的子資料夾:
 \texttt{firmware/}(C++ Pico SDK)、\texttt{host/}(Rust GUI)、
